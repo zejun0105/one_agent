@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-One-Agent is a modular Multi-Model Business Agent framework with full SDK integration and support for multiple LLM providers.
+One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, and conversation history persistence.
 
 ## Tech Stack
 
@@ -20,22 +20,29 @@ One-Agent is a modular Multi-Model Business Agent framework with full SDK integr
 pip install -r requirements.txt
 
 # Interactive mode
-python main.py
+PYTHONPATH=. python main.py
 
 # Single query
-python main.py --query "What is 25 * 4?"
+PYTHONPATH=. python main.py --query "What is 25 * 4?"
 
 # Use specific provider
-python main.py --provider openai --query "Hello"
+PYTHONPATH=. python main.py --provider openai --query "Hello"
 
-# With verbose output
-python main.py --verbose --query "Search for latest AI news"
+# Verbose output with tool execution details
+PYTHONPATH=. python main.py --verbose --query "Search for latest AI news"
 
 # List configured providers
-python main.py --list-providers
+PYTHONPATH=. python main.py --list-providers
 
-# Run tests
-pytest tests/ -v
+# History management
+PYTHONPATH=. python main.py --list-sessions              # List all saved sessions
+PYTHONPATH=. python main.py --save-history [NAME]       # Save current history
+PYTHONPATH=. python main.py --load-history NAME          # Load a session
+PYTHONPATH=. python main.py --clear-history [NAME]       # Clear a session
+PYTHONPATH=. python main.py --export-history NAME PATH   # Export to file
+
+# Custom env file
+PYTHONPATH=. python main.py --env /path/to/.env
 ```
 
 ## Architecture
@@ -46,22 +53,21 @@ pytest tests/ -v
 one-agent/
 ├── main.py              # Entry point, CLI, agent factory
 ├── core/                # Core agent logic
-│   ├── __init__.py      # Exports: Agent, Config, ConversationHistory
-│   ├── agent.py         # Main Agent class with tool execution
-│   ├── config.py        # Configuration with Pydantic models
-│   └── history.py       # Conversation history management
+│   ├── __init__.py      # Exports: Agent, Config, ConversationHistory, SessionMetadata
+│   ├── agent.py         # Main Agent class with tool execution loop
+│   ├── config.py        # Pydantic models for configuration
+│   └── history.py       # Conversation history with persistence
 ├── providers/           # LLM provider implementations
-│   ├── __init__.py      # Exports: BaseLLMProvider, AnthropicProvider, OpenAIProvider, CompatibleProvider
-│   ├── base.py          # Abstract base class (ToolCall, LLMResponse, BaseLLMProvider)
-│   ├── anthropic.py     # Anthropic Claude provider
-│   ├── openai.py        # OpenAI GPT-4 provider
-│   └── compatible.py    # GLM-4, Kimi (with native + text fallback)
-├── tools/               # Tool implementations
-│   ├── __init__.py      # Exports: Tool, ToolResult, WebSearchTool, CalculatorTool
-│   ├── base.py          # Abstract Tool class
-│   ├── web_search.py    # DuckDuckGo search tool
-│   └── calculator.py    # Math expression evaluator
-└── tests/               # Test suite
+│   ├── __init__.py      # Exports all providers
+│   ├── base.py          # Abstract base class, LLMResponse, ToolCall
+│   ├── anthropic.py     # Anthropic Claude (native tool calling)
+│   ├── openai.py        # OpenAI GPT-4 (native tool calling)
+│   └── compatible.py    # GLM-4, Kimi (native + text fallback)
+└── tools/              # Tool implementations
+    ├── __init__.py      # Exports all tools
+    ├── base.py          # Abstract Tool class, ToolResult
+    ├── web_search.py    # DuckDuckGo web search
+    └── calculator.py     # Mathematical expression evaluator
 ```
 
 ### Component Interaction
@@ -71,39 +77,66 @@ CLI (main.py)
     │
     ├─→ Config.load() ──→ .env
     │
-    ├─→ create_agent()
+    ├─→ create_agent(provider_name)
     │   ├─→ ProviderFactory.create_provider()
-    │   │   └─→ AnthropicProvider / OpenAIProvider / CompatibleProvider
+    │   │   └─→ AnthropicProvider | OpenAIProvider | CompatibleProvider
     │   │
     │   └─→ create_tools()
-    │       └─→ WebSearchTool / CalculatorTool
+    │       └─→ WebSearchTool | CalculatorTool
     │
-    └─→ Agent.run(user_input)
+    └─→ Agent
+        ├─→ ConversationHistory (auto-save to ~/.one_agent/history/{session}.json)
+        │   ├─→ save(), load(), export()
+        │   ├─→ list_sessions()
+        │   └─→ switch_session()
         │
-        ├─→ ConversationHistory.get_messages()
-        │
-        ├─→ provider.chat(messages, tools)
-        │   └─→ API call to LLM
-        │
-        ├─→ Tool.execute() for each tool_call
-        │
-        └─→ Return response
+        └─→ Agent.run(user_input)
+            ├─→ provider.chat(messages, tools)
+            └─→ Return response
 ```
 
 ### Key Classes
 
-- **Agent**: Main agent class managing conversation loop and tool execution
-- **ConversationHistory**: Message history with persistence support
-- **Config**: Pydantic-based configuration management
-- **BaseLLMProvider**: Abstract interface for LLM providers
-- **Tool**: Abstract base class for tools
+| Class | Purpose |
+|-------|---------|
+| `Agent` | Main agent managing conversation loop, tool execution, history |
+| `ConversationHistory` | Message storage with auto-trimming, persistence, sessions |
+| `SessionMetadata` | Session tracking (name, timestamps, message count) |
+| `Config` | Pydantic configuration with env loading |
+| `BaseLLMProvider` | Abstract interface for LLM providers |
+| `AnthropicProvider` | Claude SDK integration with native tools |
+| `OpenAIProvider` | OpenAI SDK integration with function calling |
+| `CompatibleProvider` | OpenAI-compatible APIs (GLM-4, Kimi) with fallback |
+| `Tool` | Abstract base for all tools |
+| `ToolResult` | Structured result with success/content/error |
+
+## History Persistence
+
+### Storage Location
+- Default: `~/.one_agent/history/{session_name}.json`
+- Configurable via `HISTORY_STORAGE_DIR` env var
+
+### Features
+- **Auto-save**: Automatically saves after each message (configurable via `AUTO_SAVE_HISTORY`)
+- **Session management**: Multiple named sessions supported
+- **Session metadata**: Tracks creation time, last updated, message count, provider
+- **Export formats**: JSON (full data) or TEXT (human-readable)
+
+### Interactive Commands
+| Command | Description |
+|---------|-------------|
+| `/save` | Manually save current history |
+| `/sessions` | List all saved sessions |
+| `/switch NAME` | Switch to a different session |
+| `/export PATH` | Export history to file (json/text) |
+| `/clear` | Clear current session history |
 
 ## Configuration
 
-Set API keys in `.env`:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-# Provider selection
+# Default provider: anthropic, openai, glm, kimi
 DEFAULT_PROVIDER=anthropic
 
 # Anthropic Claude
@@ -124,6 +157,13 @@ KIMI_MODEL=moonshot-v1-8k
 
 # Settings
 MAX_ITERATIONS=10
+MAX_HISTORY_MESSAGES=50
+
+# History persistence
+HISTORY_STORAGE_DIR=~/.one_agent/history
+AUTO_SAVE_HISTORY=true
+SESSION_NAME=default
+
 ENABLE_WEB_SEARCH=true
 ENABLE_CALCULATOR=true
 VERBOSE=false
@@ -131,8 +171,10 @@ VERBOSE=false
 
 ## Conventions
 
-- **Provider naming**: `anthropic`, `openai`, `glm`, `kimi`
-- **Tool names**: lowercase with underscores (e.g., `web_search`, `calculator`)
+- **Provider keys**: `anthropic`, `openai`, `glm`, `kimi`
+- **Tool names**: lowercase with underscores (`web_search`, `calculator`)
 - **Message roles**: `system`, `user`, `assistant`, `tool`
-- **Configuration**: Use Pydantic models for type safety
-- **Error handling**: Return `ToolResult` with `success` flag
+- **Provider naming**: ProviderConfig with `provider`, `api_key`, `model`, `base_url`
+- **Error handling**: Tools return `ToolResult(success, content, error)`
+- **Model detection**: CompatibleProvider auto-detects native tool support
+- **Session files**: Named JSON files in history storage directory

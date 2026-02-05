@@ -39,9 +39,12 @@ class Agent:
         self.tools = {t.name: t for t in (tools or [])}
         self.config = config or global_config
 
-        # Initialize conversation history
+        # Initialize conversation history with persistence
+        storage_path = self.config.get_history_storage_path()
         self.history = ConversationHistory(
-            max_messages=self.config.max_history_messages
+            max_messages=self.config.max_history_messages,
+            storage_file=str(storage_path),
+            auto_save=self.config.auto_save_history,
         )
 
         # Set up system prompt
@@ -49,6 +52,11 @@ class Agent:
             self.history.add_system(system_prompt)
         else:
             self.history.add_system(self._default_system_prompt)
+
+        # Update metadata with provider info
+        if self.history._metadata:
+            self.history._metadata.provider = self.provider.provider_name
+            self.history._metadata.model = self.provider.model_name
 
         # Initialize colors
         if self.config.colors:
@@ -108,7 +116,7 @@ Follow this Chain of Thought:
 
 ## Important Notes
 
-- If tool returns an error, try adjusting parameters or using alternatives
+- If tool returns an error, try adjusting parameters or use alternatives
 - Don't fabricate functionality that doesn't exist in your tools
 - Keep responses concise, avoid redundant tool calls
 """
@@ -168,7 +176,50 @@ Follow this Chain of Thought:
     def reset(self) -> None:
         """Reset the conversation history."""
         self.history.clear()
-        self.history.add_system(self._default_system_prompt())
+        self.history.add_system(self._default_system_prompt)
+
+    def save_history(self, path: Optional[str] = None) -> str:
+        """Manually save history to a file.
+
+        Args:
+            path: Optional path to save to
+
+        Returns:
+            The path where history was saved
+        """
+        return self.history.save(path)
+
+    def load_history(self, path: str) -> bool:
+        """Load history from a file.
+
+        Args:
+            path: Path to load from
+
+        Returns:
+            True if loaded successfully
+        """
+        return self.history.load(path)
+
+    def switch_session(self, session_name: str) -> None:
+        """Switch to a different session.
+
+        Args:
+            session_name: Name of the session to switch to
+        """
+        # Save current session first
+        if self.config.auto_save_history and self.history.storage_file:
+            self.history.save()
+
+        # Set new session name
+        self.history.set_session_name(session_name)
+
+        # Update storage file path
+        new_path = self.config.history_storage_dir / f"{session_name}.json"
+        self.history.storage_file = new_path
+
+        # Clear current messages
+        self.history.messages = []
+        self.history.add_system(self._default_system_prompt)
 
     def add_tool(self, tool: Tool) -> None:
         """Add a tool to the agent."""
@@ -255,4 +306,4 @@ Follow this Chain of Thought:
 
     def __repr__(self) -> str:
         """Return string representation."""
-        return f"Agent(provider={self.provider.__class__.__name__}, tools={len(self.tools)})"
+        return f"Agent(provider={self.provider.__class__.__name__}, tools={len(self.tools)}, history={len(self.history)})"

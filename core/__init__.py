@@ -7,7 +7,7 @@ Provides core functionality for the Business Agent including:
 """
 
 from .config import Config, config
-from .history import ConversationHistory
+from .history import ConversationHistory, SessionMetadata
 from .agent import Agent
 
-__all__ = ["Config", "config", "ConversationHistory", "Agent"]
+__all__ = ["Config", "config", "ConversationHistory", "SessionMetadata", "Agent"]

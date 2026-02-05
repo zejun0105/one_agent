@@ -28,6 +28,11 @@ class Config(BaseModel):
     max_iterations: int = Field(default=10, description="Maximum agent iterations")
     max_history_messages: int = Field(default=50, description="Maximum conversation history messages")
 
+    # History persistence settings
+    history_storage_dir: str = Field(default="~/.one_agent/history", description="Directory for history storage")
+    auto_save_history: bool = Field(default=True, description="Auto-save history after each message")
+    session_name: str = Field(default="default", description="Session name for history file")
+
     # Tool settings
     enable_web_search: bool = Field(default=True, description="Enable web search tool")
     enable_calculator: bool = Field(default=True, description="Enable calculator tool")
@@ -35,6 +40,12 @@ class Config(BaseModel):
     # UI settings
     verbose: bool = Field(default=False, description="Verbose output")
     colors: bool = Field(default=True, description="Enable colored output")
+
+    def get_history_storage_path(self) -> Path:
+        """Get the resolved history storage path."""
+        path = Path(self.history_storage_dir).expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        return path / f"{self.session_name}.json"
 
     @classmethod
     def load(cls, env_file: Optional[str] = None) -> "Config":
@@ -97,6 +108,9 @@ class Config(BaseModel):
             providers=providers,
             max_iterations=int(os.environ.get("MAX_ITERATIONS", 10)),
             max_history_messages=int(os.environ.get("MAX_HISTORY_MESSAGES", 50)),
+            history_storage_dir=os.environ.get("HISTORY_STORAGE_DIR", "~/.one_agent/history"),
+            auto_save_history=os.environ.get("AUTO_SAVE_HISTORY", "true").lower() == "true",
+            session_name=os.environ.get("SESSION_NAME", "default"),
             enable_web_search=os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true",
             enable_calculator=os.environ.get("ENABLE_CALCULATOR", "true").lower() == "true",
             verbose=os.environ.get("VERBOSE", "false").lower() == "true",
