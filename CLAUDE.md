@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, and conversation history persistence.
+One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, conversation history persistence, and streaming response.
 
 ## Tech Stack
 
@@ -28,6 +28,9 @@ PYTHONPATH=. python main.py --query "What is 25 * 4?"
 # Use specific provider
 PYTHONPATH=. python main.py --provider openai --query "Hello"
 
+# Streaming response
+PYTHONPATH=. python main.py --stream --query "Tell me a story"
+
 # Verbose output with tool execution details
 PYTHONPATH=. python main.py --verbose --query "Search for latest AI news"
 
@@ -38,7 +41,7 @@ PYTHONPATH=. python main.py --list-providers
 PYTHONPATH=. python main.py --list-sessions              # List all saved sessions
 PYTHONPATH=. python main.py --save-history [NAME]       # Save current history
 PYTHONPATH=. python main.py --load-history NAME          # Load a session
-PYTHONPATH=. python main.py --clear-history [NAME]       # Clear a session
+PYTHONPATH=. python main.py --clear-history [NAME]      # Clear a session
 PYTHONPATH=. python main.py --export-history NAME PATH   # Export to file
 
 # Custom env file
@@ -54,20 +57,20 @@ one-agent/
 ├── main.py              # Entry point, CLI, agent factory
 ├── core/                # Core agent logic
 │   ├── __init__.py      # Exports: Agent, Config, ConversationHistory, SessionMetadata
-│   ├── agent.py         # Main Agent class with tool execution loop
+│   ├── agent.py         # Main Agent class with tool execution loop, streaming support
 │   ├── config.py        # Pydantic models for configuration
 │   └── history.py       # Conversation history with persistence
 ├── providers/           # LLM provider implementations
-│   ├── __init__.py      # Exports all providers
-│   ├── base.py          # Abstract base class, LLMResponse, ToolCall
-│   ├── anthropic.py     # Anthropic Claude (native tool calling)
-│   ├── openai.py        # OpenAI GPT-4 (native tool calling)
-│   └── compatible.py    # GLM-4, Kimi (native + text fallback)
+│   ├── __init__.py      # Exports all providers, StreamChunk, ToolCall
+│   ├── base.py          # Abstract base class, LLMResponse, StreamChunk
+│   ├── anthropic.py     # Anthropic Claude (native streaming)
+│   ├── openai.py        # OpenAI GPT-4 (native streaming)
+│   └── compatible.py     # GLM-4, Kimi (native + text fallback)
 └── tools/              # Tool implementations
     ├── __init__.py      # Exports all tools
     ├── base.py          # Abstract Tool class, ToolResult
     ├── web_search.py    # DuckDuckGo web search
-    └── calculator.py     # Mathematical expression evaluator
+    └── calculator.py    # Mathematical expression evaluator
 ```
 
 ### Component Interaction
@@ -90,25 +93,57 @@ CLI (main.py)
         │   ├─→ list_sessions()
         │   └─→ switch_session()
         │
-        └─→ Agent.run(user_input)
-            ├─→ provider.chat(messages, tools)
-            └─→ Return response
+        └─→ Agent.run() | Agent.stream()
+            ├─→ provider.chat() | provider.stream()
+            └─→ Return response | Yield StreamChunk
 ```
 
 ### Key Classes
 
 | Class | Purpose |
 |-------|---------|
-| `Agent` | Main agent managing conversation loop, tool execution, history |
-| `ConversationHistory` | Message storage with auto-trimming, persistence, sessions |
+| `Agent` | Main agent with run(), stream(), history management |
+| `ConversationHistory` | Message storage with persistence, sessions |
 | `SessionMetadata` | Session tracking (name, timestamps, message count) |
 | `Config` | Pydantic configuration with env loading |
 | `BaseLLMProvider` | Abstract interface for LLM providers |
-| `AnthropicProvider` | Claude SDK integration with native tools |
-| `OpenAIProvider` | OpenAI SDK integration with function calling |
-| `CompatibleProvider` | OpenAI-compatible APIs (GLM-4, Kimi) with fallback |
-| `Tool` | Abstract base for all tools |
+| `AnthropicProvider` | Claude SDK with native streaming |
+| `OpenAIProvider` | OpenAI SDK with native streaming |
+| `CompatibleProvider` | OpenAI-compatible APIs (GLM-4, Kimi) |
+| `StreamChunk` | Streaming response chunk (delta, content, is_final) |
+| `LLMResponse` | Non-streaming response |
+| `Tool` | Abstract base for tools |
 | `ToolResult` | Structured result with success/content/error |
+
+## Streaming
+
+### Usage
+
+```python
+# Streaming response
+for chunk in agent.stream("Tell me a story"):
+    print(chunk.delta, end="", flush=True)
+```
+
+### CLI Usage
+
+```bash
+# Single query with streaming
+PYTHONPATH=. python main.py --stream --query "Tell me a story"
+
+# Interactive mode - toggle with /stream command
+PYTHONPATH=. python main.py
+# Then type: /stream to toggle
+```
+
+### StreamChunk Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | str | Accumulated content so far |
+| `delta` | str | New content in this chunk |
+| `is_final` | bool | True if this is the final chunk |
+| `tool_calls` | List[ToolCall] | Tool calls if any |
 
 ## History Persistence
 
@@ -123,8 +158,10 @@ CLI (main.py)
 - **Export formats**: JSON (full data) or TEXT (human-readable)
 
 ### Interactive Commands
+
 | Command | Description |
 |---------|-------------|
+| `/stream` | Toggle streaming on/off |
 | `/save` | Manually save current history |
 | `/sessions` | List all saved sessions |
 | `/switch NAME` | Switch to a different session |
@@ -159,6 +196,10 @@ KIMI_MODEL=moonshot-v1-8k
 MAX_ITERATIONS=10
 MAX_HISTORY_MESSAGES=50
 
+# Streaming
+STREAMING=false        # Enable streaming by default
+STREAMING_ECHO=true   # Print streaming chunks to console
+
 # History persistence
 HISTORY_STORAGE_DIR=~/.one_agent/history
 AUTO_SAVE_HISTORY=true
@@ -178,3 +219,4 @@ VERBOSE=false
 - **Error handling**: Tools return `ToolResult(success, content, error)`
 - **Model detection**: CompatibleProvider auto-detects native tool support
 - **Session files**: Named JSON files in history storage directory
+- **Streaming**: Use `Agent.stream()` for streaming responses

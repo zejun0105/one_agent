@@ -1,8 +1,8 @@
 """OpenAI (GPT-4) provider implementation."""
 
 import json
-from typing import Optional, List, Any
-from .base import BaseLLMProvider, LLMResponse, ToolCall
+from typing import Optional, List, Any, Generator
+from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -92,6 +92,41 @@ class OpenAIProvider(BaseLLMProvider):
             usage=usage
         )
 
+    def parse_stream_chunk(self, chunk) -> StreamChunk:
+        """Parse an OpenAI streaming chunk."""
+        delta = ""
+        is_final = False
+        tool_calls = None
+
+        if chunk.choices and len(chunk.choices) > 0:
+            choice = chunk.choices[0]
+
+            if choice.delta:
+                if choice.delta.content:
+                    delta = choice.delta.content
+
+                # Check for tool calls
+                if choice.delta.tool_calls:
+                    tool_calls = []
+                    for tc in choice.delta.tool_calls:
+                        if tc.function:
+                            arguments = tc.function.arguments or ""
+                            tool_calls.append(ToolCall(
+                                id=tc.id or f"call_{len(tool_calls)}",
+                                name=tc.function.name,
+                                arguments=json.loads(arguments) if arguments else {}
+                            ))
+
+            # Check for completion
+            if choice.finish_reason:
+                is_final = True
+
+        return StreamChunk(
+            delta=delta,
+            is_final=is_final,
+            tool_calls=tool_calls
+        )
+
     def chat(
         self,
         messages: List[dict],
@@ -117,3 +152,45 @@ class OpenAIProvider(BaseLLMProvider):
         response = self.client.chat.completions.create(**params)
 
         return self.parse_response(response)
+
+    def stream(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        **kwargs
+    ) -> Generator[StreamChunk, None, None]:
+        """Stream chat request to OpenAI."""
+        # Build request parameters
+        params = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+            **kwargs
+        }
+
+        # Add tools if present
+        if tools:
+            params["tools"] = self.format_tools(tools)
+            params["tool_choice"] = "auto"
+
+        # Make streaming API call
+        response = self.client.chat.completions.create(**params)
+
+        full_content = ""
+        for chunk in response:
+            parsed = self.parse_stream_chunk(chunk)
+            full_content += parsed.delta
+
+            # Yield partial chunks
+            yield StreamChunk(
+                content=full_content,
+                delta=parsed.delta,
+                is_final=parsed.is_final,
+                tool_calls=parsed.tool_calls
+            )
+
+            # Stop after final chunk
+            if parsed.is_final:
+                break

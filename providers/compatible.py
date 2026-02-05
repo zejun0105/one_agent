@@ -2,8 +2,8 @@
 
 import json
 import re
-from typing import Optional, List, Any
-from .base import BaseLLMProvider, LLMResponse, ToolCall
+from typing import Optional, List, Any, Generator
+from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
 class CompatibleProvider(BaseLLMProvider):
@@ -121,6 +121,41 @@ class CompatibleProvider(BaseLLMProvider):
 
         return LLMResponse(content=str(response))
 
+    def parse_stream_chunk(self, chunk) -> StreamChunk:
+        """Parse a streaming chunk."""
+        delta = ""
+        is_final = False
+        tool_calls = None
+
+        if hasattr(chunk, 'choices') and chunk.choices:
+            choice = chunk.choices[0]
+
+            if choice.delta:
+                if choice.delta.content:
+                    delta = choice.delta.content
+
+                # Check for tool calls
+                if choice.delta.tool_calls:
+                    tool_calls = []
+                    for tc in choice.delta.tool_calls:
+                        if tc.function:
+                            arguments = tc.function.arguments or ""
+                            tool_calls.append(ToolCall(
+                                id=tc.id or f"call_{len(tool_calls)}",
+                                name=tc.function.name,
+                                arguments=json.loads(arguments) if arguments else {}
+                            ))
+
+            # Check for completion
+            if choice.finish_reason:
+                is_final = True
+
+        return StreamChunk(
+            delta=delta,
+            is_final=is_final,
+            tool_calls=tool_calls
+        )
+
     def _parse_text_tool_calls(self, content: str) -> Optional[List[ToolCall]]:
         """Parse tool calls from text content (for models without native support)."""
         pattern = r'```tool_call\s*\n(.*?)\n```'
@@ -182,6 +217,59 @@ When using a tool, format your response as:
         else:
             # Use native tool calling
             return self._chat_native(messages, tools, **kwargs)
+
+    def stream(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        **kwargs
+    ) -> Generator[StreamChunk, None, None]:
+        """Stream chat request to compatible API."""
+        # Note: Streaming with tools is limited for compatible providers
+        # Text-based tool calling doesn't support streaming well
+
+        if not self.supports_native_tools and tools:
+            # Fallback to non-streaming with text-based tools
+            response = self._chat_with_text_tools(messages, tools, **kwargs)
+            # Simulate streaming with single chunk
+            yield StreamChunk(
+                content=response.content or "",
+                delta=response.content or "",
+                is_final=True,
+                tool_calls=response.tool_calls
+            )
+            return
+
+        # Native streaming
+        params = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "stream": True,
+            **kwargs
+        }
+
+        if tools:
+            params["tools"] = self.format_tools(tools)
+            params["tool_choice"] = "auto"
+
+        response = self.client.chat.completions.create(**params)
+
+        full_content = ""
+        for chunk in response:
+            parsed = self.parse_stream_chunk(chunk)
+            full_content += parsed.delta
+
+            yield StreamChunk(
+                content=full_content,
+                delta=parsed.delta,
+                is_final=parsed.is_final,
+                tool_calls=parsed.tool_calls
+            )
+
+            if parsed.is_final:
+                break
 
     def _chat_native(
         self,

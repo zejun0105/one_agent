@@ -1,7 +1,7 @@
 """Main Agent class for One-Agent."""
 
 import sys
-from typing import Optional, Callable
+from typing import Optional, Callable, Generator
 from colorama import Fore, Style, init
 
 # Conditional imports for both module and standalone usage
@@ -9,12 +9,12 @@ try:
     from .config import Config, config as global_config
     from .history import ConversationHistory, Message
     from tools.base import Tool, ToolResult
-    from providers.base import BaseLLMProvider, LLMResponse, ToolCall
+    from providers.base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 except ImportError:
     from .config import Config, config as global_config
     from .history import ConversationHistory, Message
     from tools.base import Tool, ToolResult
-    from providers.base import BaseLLMProvider, LLMResponse, ToolCall
+    from providers.base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
 class Agent:
@@ -172,6 +172,67 @@ Follow this Chain of Thought:
                 return response.content
 
         return "Maximum iterations reached. Task incomplete."
+
+    def stream(self, user_input: str, callback=None) -> Generator[StreamChunk, None, str]:
+        """Stream the agent's response to user input.
+
+        Args:
+            user_input: The user's input
+            callback: Optional callback function(chunk) for each chunk
+
+        Yields:
+            StreamChunk with content delta
+        Returns:
+            Final response content
+        """
+        self.history.add_user(user_input)
+        full_response = ""
+        max_iters = self.config.max_iterations
+
+        for iteration in range(max_iters):
+            self._print_iteration(iteration + 1, max_iters)
+
+            messages = self.history.get_messages()
+            tool_defs = [t.to_dict() for t in self.tools.values()]
+
+            # Stream the response
+            for chunk in self.provider.stream(messages=messages, tools=tool_defs):
+                full_response += chunk.delta
+
+                # Call callback if provided
+                if callback:
+                    callback(chunk)
+
+                # Print chunk for streaming effect
+                self._print_streaming_chunk(chunk)
+
+                # Handle tool calls in streaming
+                if chunk.tool_calls:
+                    tool_results = self._execute_tool_calls(chunk.tool_calls)
+                    for result in tool_results:
+                        self.history.add_tool_result(
+                            tool_call_id=result.tool_call_id,
+                            content=result.content
+                        )
+
+            # Add assistant response to history
+            self.history.add_assistant(content=full_response)
+
+            # Check for tool calls and continue if needed
+            if self.history.messages[-1].tool_calls:
+                # Continue to next iteration for tool results
+                continue
+
+            # No more tool calls, return the response
+            self._print_success()
+            return full_response
+
+        return "Maximum iterations reached. Task incomplete."
+
+    def _print_streaming_chunk(self, chunk: StreamChunk) -> None:
+        """Print a streaming chunk to console."""
+        if chunk.delta:
+            print(chunk.delta, end="", flush=True)
 
     def reset(self) -> None:
         """Reset the conversation history."""

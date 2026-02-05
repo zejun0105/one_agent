@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Generator
 
 
 @dataclass
@@ -23,6 +23,15 @@ class LLMResponse:
     def __post_init__(self):
         if self.tool_calls and isinstance(self.tool_calls[0], dict):
             self.tool_calls = [ToolCall(**tc) for tc in self.tool_calls]
+
+
+@dataclass
+class StreamChunk:
+    """A chunk from a streaming response."""
+    content: str = ""
+    delta: str = ""
+    is_final: bool = False
+    tool_calls: Optional[List[ToolCall]] = None
 
 
 class BaseLLMProvider(ABC):
@@ -48,6 +57,25 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
+    def stream(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        **kwargs
+    ) -> Generator[StreamChunk, None, None]:
+        """Stream a chat request to the LLM.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            tools: Optional list of tool definitions
+            **kwargs: Additional provider-specific arguments
+
+        Yields:
+            StreamChunk with content deltas
+        """
+        pass
+
+    @abstractmethod
     def format_tools(self, tools: List[dict]) -> Any:
         """Format tools for this provider's API.
 
@@ -68,6 +96,18 @@ class BaseLLMProvider(ABC):
 
         Returns:
             Parsed LLMResponse
+        """
+        pass
+
+    @abstractmethod
+    def parse_stream_chunk(self, chunk: Any) -> StreamChunk:
+        """Parse a streaming chunk.
+
+        Args:
+            chunk: Raw streaming chunk
+
+        Returns:
+            Parsed StreamChunk
         """
         pass
 

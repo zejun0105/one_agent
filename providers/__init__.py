@@ -6,7 +6,7 @@ Provides LLM provider implementations for multi-model support:
 - Compatible (GLM-4, Kimi, etc.)
 """
 
-from .base import BaseLLMProvider, LLMResponse
+from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 from .anthropic import AnthropicProvider
 from .openai import OpenAIProvider
 from .compatible import CompatibleProvider
@@ -14,6 +14,8 @@ from .compatible import CompatibleProvider
 __all__ = [
     "BaseLLMProvider",
     "LLMResponse",
+    "ToolCall",
+    "StreamChunk",
     "AnthropicProvider",
     "OpenAIProvider",
     "CompatibleProvider",

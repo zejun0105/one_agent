@@ -1,8 +1,8 @@
 """Anthropic (Claude) provider implementation."""
 
 import json
-from typing import Optional, List, Any
-from .base import BaseLLMProvider, LLMResponse, ToolCall
+from typing import Optional, List, Any, Generator
+from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
 class AnthropicProvider(BaseLLMProvider):
@@ -87,14 +87,40 @@ class AnthropicProvider(BaseLLMProvider):
             usage=usage
         )
 
-    def chat(
+    def parse_stream_chunk(self, chunk) -> StreamChunk:
+        """Parse an Anthropic streaming chunk."""
+        delta = ""
+        is_final = False
+        tool_calls = None
+
+        if chunk.type == "content_block_delta":
+            if chunk.delta.type == "text_delta":
+                delta = chunk.delta.text
+            elif chunk.delta.type == "tool_use_delta":
+                # Tool use in streaming - capture the full input
+                if hasattr(chunk.delta, 'input') and chunk.delta.input:
+                    delta = json.dumps(chunk.delta.input, ensure_ascii=False)
+
+        elif chunk.type == "message_delta":
+            if hasattr(chunk, 'stop_reason'):
+                is_final = True
+
+        return StreamChunk(
+            delta=delta,
+            is_final=is_final,
+            tool_calls=tool_calls
+        )
+
+    def _prepare_params(
         self,
         messages: List[dict],
         tools: Optional[List[dict]] = None,
-        **kwargs
-    ) -> LLMResponse:
-        """Send chat request to Anthropic."""
-        # Extract system message (Anthropic requires it separately)
+    ) -> tuple:
+        """Prepare request parameters.
+
+        Returns:
+            Tuple of (system_message, api_messages, params)
+        """
         system_message = None
         api_messages = []
 
@@ -104,13 +130,11 @@ class AnthropicProvider(BaseLLMProvider):
             else:
                 api_messages.append(msg)
 
-        # Build request parameters
         params = {
             "model": self._model,
             "messages": api_messages,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
-            **kwargs
         }
 
         # Add system message if present
@@ -122,7 +146,55 @@ class AnthropicProvider(BaseLLMProvider):
             params["tools"] = self.format_tools(tools)
             params["tool_choice"] = {"type": "auto"}
 
+        return system_message, api_messages, params
+
+    def chat(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        **kwargs
+    ) -> LLMResponse:
+        """Send chat request to Anthropic."""
+        _, _, params = self._prepare_params(messages, tools)
+        params.update(kwargs)
+
         # Make API call
         response = self.client.messages.create(**params)
 
         return self.parse_response(response)
+
+    def stream(
+        self,
+        messages: List[dict],
+        tools: Optional[List[dict]] = None,
+        **kwargs
+    ) -> Generator[StreamChunk, None, None]:
+        """Stream chat request to Anthropic."""
+        _, _, params = self._prepare_params(messages, tools)
+        params.update(kwargs)
+
+        # Stream the response
+        with self.client.messages.stream(**params) as stream:
+            full_content = ""
+
+            for chunk in stream:
+                parsed = self.parse_stream_chunk(chunk)
+                full_content += parsed.delta
+
+                # Check for completion
+                if parsed.is_final or chunk.type == "message_stop":
+                    yield StreamChunk(
+                        content=full_content,
+                        delta=parsed.delta,
+                        is_final=True,
+                        tool_calls=parsed.tool_calls
+                    )
+                    break
+
+                # Yield partial chunks
+                if parsed.delta:
+                    yield StreamChunk(
+                        content=full_content,
+                        delta=parsed.delta,
+                        is_final=False
+                    )

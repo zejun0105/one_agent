@@ -172,11 +172,12 @@ def create_agent(
     return agent
 
 
-def interactive_mode(agent: Agent) -> None:
+def interactive_mode(agent: Agent, stream: bool = False) -> None:
     """Run agent in interactive mode.
 
     Args:
         agent: Agent instance
+        stream: Whether to use streaming
     """
     print("=" * 60)
     print("  One-Agent - Multi-Model Business Agent")
@@ -185,7 +186,8 @@ def interactive_mode(agent: Agent) -> None:
     print(f"Provider: {agent.provider.provider_name} ({agent.provider.model_name})")
     print(f"History: {len(agent.history)} messages (auto-save: {agent.config.auto_save_history})")
     print(f"Storage: {agent.history.storage_file}")
-    print(f"Available tools: {[t.name for t in agent.tools]}")
+    print(f"Streaming: {'enabled' if stream else 'disabled'}")
+    print(f"Available tools: {list(agent.tools.keys())}")
     print("\nCommands:")
     print("  /help       - Show this help")
     print("  /reset      - Reset conversation")
@@ -194,6 +196,7 @@ def interactive_mode(agent: Agent) -> None:
     print("  /switch NAME - Switch to a different session")
     print("  /export PATH - Export history to file (json or text)")
     print("  /clear      - Clear current session history")
+    print("  /stream     - Toggle streaming on/off")
     print("  quit        - Exit")
     print("-" * 60)
 
@@ -275,13 +278,22 @@ def interactive_mode(agent: Agent) -> None:
                     print("History cleared.")
                     continue
 
+                elif cmd == "/stream":
+                    stream = not stream
+                    print(f"Streaming {'enabled' if stream else 'disabled'}.")
+                    continue
+
                 else:
                     print(f"Unknown command: {cmd}")
                     print("Type /help for available commands")
                     continue
 
             print()
-            response = agent.run(user_input)
+            if stream:
+                response = agent.stream(user_input)
+                print()  # Newline after streaming
+            else:
+                response = agent.run(user_input)
             print(f"\nAgent: {response}")
 
     except KeyboardInterrupt:
@@ -291,16 +303,19 @@ def interactive_mode(agent: Agent) -> None:
         sys.exit(1)
 
 
-def single_query(agent: Agent, query: str) -> str:
+def single_query(agent: Agent, query: str, stream: bool = False) -> str:
     """Run a single query and return result.
 
     Args:
         agent: Agent instance
         query: User query
+        stream: Whether to use streaming
 
     Returns:
         Agent response
     """
+    if stream:
+        return agent.stream(query)
     return agent.run(query)
 
 
@@ -412,6 +427,13 @@ Examples:
         help="List configured providers and exit"
     )
 
+    # Streaming option
+    parser.add_argument(
+        "--stream", "-s",
+        action="store_true",
+        help="Enable streaming response"
+    )
+
     # History commands
     parser.add_argument(
         "--list-sessions",
@@ -508,10 +530,10 @@ Examples:
 
     # Run mode
     if args.query:
-        response = single_query(agent, args.query)
-        print(response)
+        response = single_query(agent, args.query, stream=args.stream)
+        print()  # Add newline after streaming output
     else:
-        interactive_mode(agent)
+        interactive_mode(agent, stream=args.stream)
 
     return 0
 

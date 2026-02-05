@@ -28,6 +28,10 @@ class Config(BaseModel):
     max_iterations: int = Field(default=10, description="Maximum agent iterations")
     max_history_messages: int = Field(default=50, description="Maximum conversation history messages")
 
+    # Streaming settings
+    streaming: bool = Field(default=False, description="Enable streaming response")
+    streaming_echo: bool = Field(default=True, description="Print streaming chunks to console")
+
     # History persistence settings
     history_storage_dir: str = Field(default="~/.one_agent/history", description="Directory for history storage")
     auto_save_history: bool = Field(default=True, description="Auto-save history after each message")
@@ -108,6 +112,8 @@ class Config(BaseModel):
             providers=providers,
             max_iterations=int(os.environ.get("MAX_ITERATIONS", 10)),
             max_history_messages=int(os.environ.get("MAX_HISTORY_MESSAGES", 50)),
+            streaming=os.environ.get("STREAMING", "false").lower() == "true",
+            streaming_echo=os.environ.get("STREAMING_ECHO", "true").lower() == "true",
             history_storage_dir=os.environ.get("HISTORY_STORAGE_DIR", "~/.one_agent/history"),
             auto_save_history=os.environ.get("AUTO_SAVE_HISTORY", "true").lower() == "true",
             session_name=os.environ.get("SESSION_NAME", "default"),
