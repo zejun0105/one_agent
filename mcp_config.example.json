@@ -1,0 +1,32 @@
+{
+  "description": "MCP Server Configuration for One-Agent",
+  "servers": [
+    {
+      "name": "github",
+      "command": "uvx",
+      "args": ["mcp-server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "timeout": 30
+    },
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"],
+      "timeout": 30
+    },
+    {
+      "name": "postgres",
+      "command": "uvx",
+      "args": ["mcp-server-postgres", "postgresql://user:pass@localhost/db"],
+      "timeout": 30
+    },
+    {
+      "name": "puppeteer",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "timeout": 60
+    }
+  ]
+}

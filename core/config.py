@@ -37,6 +37,10 @@ class Config(BaseModel):
     auto_save_history: bool = Field(default=True, description="Auto-save history after each message")
     session_name: str = Field(default="default", description="Session name for history file")
 
+    # MCP settings
+    mcp_config_file: str = Field(default="mcp_servers.json", description="Path to MCP servers config file")
+    enable_mcp: bool = Field(default=True, description="Enable MCP integration")
+
     # Tool settings
     enable_web_search: bool = Field(default=True, description="Enable web search tool")
     enable_calculator: bool = Field(default=True, description="Enable calculator tool")
@@ -122,6 +126,8 @@ class Config(BaseModel):
             history_storage_dir=os.environ.get("HISTORY_STORAGE_DIR", "~/.one_agent/history"),
             auto_save_history=os.environ.get("AUTO_SAVE_HISTORY", "true").lower() == "true",
             session_name=os.environ.get("SESSION_NAME", "default"),
+            mcp_config_file=os.environ.get("MCP_CONFIG_FILE", "mcp_servers.json"),
+            enable_mcp=os.environ.get("ENABLE_MCP", "true").lower() == "true",
             enable_web_search=os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true",
             enable_calculator=os.environ.get("ENABLE_CALCULATOR", "true").lower() == "true",
             enable_python_code=os.environ.get("ENABLE_PYTHON_CODE", "true").lower() == "true",

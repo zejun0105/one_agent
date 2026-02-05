@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, conversation history persistence, streaming response, and comprehensive tool system.
+One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, conversation history persistence, streaming response, comprehensive tool system, and MCP (Model Context Protocol) server integration.
 
 ## Tech Stack
 
@@ -44,6 +44,11 @@ PYTHONPATH=. python main.py --load-history NAME          # Load a session
 PYTHONPATH=. python main.py --clear-history [NAME]      # Clear a session
 PYTHONPATH=. python main.py --export-history NAME PATH   # Export to file
 
+# MCP management
+PYTHONPATH=. python main.py --list-mcp-servers           # List configured MCP servers
+PYTHONPATH=. python main.py --mcp-config FILE            # Use custom MCP config
+PYTHONPATH=. python main.py --mcp-connect SERVER         # Connect to specific server
+
 # Custom env file
 PYTHONPATH=. python main.py --env /path/to/.env
 ```
@@ -66,15 +71,20 @@ one-agent/
 │   ├── anthropic.py     # Anthropic Claude (native streaming)
 │   ├── openai.py        # OpenAI GPT-4 (native streaming)
 │   └── compatible.py     # GLM-4, Kimi (native + text fallback)
-└── tools/              # Tool implementations
-    ├── __init__.py      # Exports all tools
-    ├── base.py          # Abstract Tool class, ToolResult
-    ├── web_search.py    # DuckDuckGo web search
-    ├── calculator.py    # Mathematical expression evaluator
-    ├── python_code.py   # Python code execution
-    ├── file_tool.py     # File read/write
-    ├── system.py        # System command execution
-    └── wikipedia.py      # Wikipedia search
+├── tools/              # Tool implementations
+│   ├── __init__.py      # Exports all tools
+│   ├── base.py          # Abstract Tool class, ToolResult
+│   ├── web_search.py    # DuckDuckGo web search
+│   ├── calculator.py    # Mathematical expression evaluator
+│   ├── python_code.py   # Python code execution
+│   ├── file_tool.py     # File read/write
+│   ├── system.py        # System command execution
+│   └── wikipedia.py      # Wikipedia search
+└── mcp/               # MCP (Model Context Protocol) integration
+    ├── __init__.py      # Exports: MCPClient, MCPServerConfig, MCPToolRegistry
+    ├── client.py        # MCP client implementation (JSON-RPC protocol)
+    ├── tool.py         # MCP tool wrapper for One-Agent
+    └── registry.py      # MCP server and tool registry
 ```
 
 ### Component Interaction
@@ -231,6 +241,85 @@ PYTHONPATH=. python main.py
 | `/switch NAME` | Switch to a different session |
 | `/export PATH` | Export history to file (json/text) |
 | `/clear` | Clear current session history |
+| `/mcp` | List MCP servers and available tools |
+
+## MCP Integration
+
+One-Agent supports Model Context Protocol (MCP) servers for extended capabilities.
+
+### MCP Configuration
+
+Create a `mcp_servers.json` file in the project root:
+
+```json
+{
+  "servers": [
+    {
+      "name": "github",
+      "command": "uvx",
+      "args": ["mcp-server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "timeout": 30
+    },
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"],
+      "timeout": 30
+    }
+  ]
+}
+```
+
+### MCP CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `--list-mcp-servers` | List configured MCP servers |
+| `--mcp-config FILE` | Path to MCP config file |
+| `--mcp-connect SERVER` | Connect to a specific server and list tools |
+
+### MCP Environment Variables
+
+```bash
+ENABLE_MCP=true           # Enable MCP integration (default: true)
+MCP_CONFIG_FILE=mcp_servers.json  # Path to MCP config
+```
+
+### Interactive MCP Commands
+
+| Command | Description |
+|---------|-------------|
+| `/mcp` | List all MCP servers, connection status, and available tools |
+
+### Key Classes
+
+| Class | Purpose |
+|-------|---------|
+| `MCPClient` | Client for connecting to MCP servers via JSON-RPC |
+| `MCPServerConfig` | Configuration for an MCP server |
+| `MCPToolRegistry` | Registry for managing multiple MCP servers |
+| `MCPTool` | Wrapper for MCP tools to work with One-Agent |
+| `MCPToolInfo` | Information about an MCP tool |
+
+### MCP Tool Naming
+
+MCP tools are prefixed with `mcp_` and include the server name:
+- Format: `mcp_{server_name}_{tool_name}`
+- Example: `mcp_github_search_repositories`, `mcp_filesystem_read_file`
+
+### Protocol Methods
+
+The MCP client implements these JSON-RPC methods:
+- `initialize` - Initialize connection with protocol version
+- `tools/list` - List available tools
+- `tools/call` - Call a tool
+- `resources/list` - List available resources
+- `resources/read` - Read a resource
+- `prompts/list` - List available prompts
+- `prompts/get` - Get a prompt
 
 ## Configuration
 
@@ -278,6 +367,10 @@ ENABLE_FILE_WRITE=true
 ENABLE_SYSTEM=false        # WARNING: Security risk
 ENABLE_WIKIPEDIA=true
 
+# MCP (Model Context Protocol)
+ENABLE_MCP=true
+MCP_CONFIG_FILE=mcp_servers.json
+
 VERBOSE=false
 ```
 
@@ -285,6 +378,7 @@ VERBOSE=false
 
 - **Provider keys**: `anthropic`, `openai`, `glm`, `kimi`
 - **Tool names**: lowercase with underscores (`web_search`, `python_code`, `file_read`)
+- **MCP tool names**: `mcp_{server_name}_{tool_name}` format
 - **Message roles**: `system`, `user`, `assistant`, `tool`
 - **Provider naming**: ProviderConfig with `provider`, `api_key`, `model`, `base_url`
 - **Error handling**: Tools return `ToolResult(success, content, error)`

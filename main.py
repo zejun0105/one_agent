@@ -40,6 +40,15 @@ from tools import (
     WikipediaTool,
 )
 
+# Import MCP modules
+from mcp import (
+    MCPClient,
+    MCPServerConfig,
+    MCPToolRegistry,
+    create_mcp_tools_from_config,
+    MCP_TOOL_PREFIX,
+)
+
 
 def load_config(env_file: Optional[str] = None) -> Config:
     """Load configuration from environment.
@@ -103,14 +112,14 @@ def create_provider(provider_config: ProviderConfig) -> Optional:
     return None
 
 
-def create_tools(config: Config) -> list:
+def create_tools(config: Config) -> tuple:
     """Create tools based on configuration.
 
     Args:
         config: Configuration object
 
     Returns:
-        List of Tool instances
+        Tuple of (list of Tool instances, MCP registry if enabled)
     """
     tools = []
 
@@ -137,7 +146,15 @@ def create_tools(config: Config) -> list:
     if config.enable_wikipedia:
         tools.append(WikipediaTool())
 
-    return tools
+    # MCP tools
+    mcp_registry = None
+    if config.enable_mcp:
+        mcp_registry = MCPToolRegistry.from_mcp_config(config.mcp_config_file)
+        if mcp_registry.server_names:
+            # MCP tools will be added after connection
+            pass
+
+    return tools, mcp_registry
 
 
 def create_agent(
@@ -182,12 +199,39 @@ def create_agent(
         return None
 
     # Create tools
-    tools = create_tools(cfg)
+    tools, mcp_registry = create_tools(cfg)
+
+    # Connect to MCP servers and add MCP tools
+    mcp_tools = []
+    if mcp_registry and cfg.enable_mcp:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(mcp_registry.connect())
+
+        if verbose:
+            print(f"MCP connection results: {results}")
+
+        # Create MCP tool wrappers
+        from mcp.tool import MCPToolFactory
+        factory = MCPToolFactory()
+
+        for server_name, client in mcp_registry._clients.items():
+            if client.is_connected:
+                factory.add_server(server_name, client)
+
+        mcp_tools = factory.create_tools()
+
+        if verbose and mcp_tools:
+            print(f"Loaded {len(mcp_tools)} MCP tools from {len(mcp_registry.server_names)} servers")
+
+    # Combine tools and MCP tools
+    all_tools = tools + mcp_tools
 
     # Create agent
     agent = Agent(
         provider=provider,
-        tools=tools,
+        tools=all_tools,
         config=cfg,
     )
 
@@ -247,6 +291,8 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
                     print("  /switch NAME - Switch to a different session")
                     print("  /export PATH - Export history (e.g., /export ./history.txt)")
                     print("  /clear      - Clear current session history")
+                    print("  /stream     - Toggle streaming on/off")
+                    print("  /mcp        - List MCP servers and tools")
                     print("  quit        - Exit")
                     continue
 
@@ -303,6 +349,36 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
                 elif cmd == "/stream":
                     stream = not stream
                     print(f"Streaming {'enabled' if stream else 'disabled'}.")
+                    continue
+
+                elif cmd == "/mcp":
+                    from mcp import MCPToolRegistry, MCP_TOOL_PREFIX
+                    import asyncio
+
+                    registry = MCPToolRegistry.from_mcp_config(agent.config.mcp_config_file)
+                    if not registry.server_names:
+                        print("No MCP servers configured.")
+                        print(f"Create mcp_servers.json or set MCP_CONFIG_FILE env var.")
+                    else:
+                        print(f"\nMCP Servers ({len(registry.server_names)}):")
+                        print("-" * 60)
+
+                        # Connect to all servers
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(registry.connect())
+
+                        for status in registry.list_servers():
+                            conn = "[connected]" if status.connected else "[disconnected]"
+                            tools = registry.list_tools(status.name)
+                            print(f"  {status.name} {conn}")
+                            print(f"    Tools: {len(tools)} available")
+                            for t in tools[:3]:
+                                print(f"      - {t.name}")
+                            if len(tools) > 3:
+                                print(f"      ... and {len(tools) - 3} more")
+
+                        loop.run_until_complete(registry.disconnect())
                     continue
 
                 else:
@@ -393,15 +469,12 @@ def cmd_clear_history(config: Config, session_name: str = "default") -> None:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="One-Agent: Multi-Model Business Agent",
+        description="One-Agent: Multi-Model Business Agent with MCP Support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-History Commands:
-  --list-sessions              List all saved sessions
-  --save-history [NAME]        Save current history (default: default)
-  --load-history NAME          Load a saved session
-  --clear-history [NAME]       Clear a session (default: default)
-  --export-history NAME PATH   Export session to file
+MCP Commands:
+  --list-mcp-servers           List configured MCP servers
+  --mcp-config FILE             Path to MCP config file (default: mcp_servers.json)
 
 Examples:
   # Interactive mode
@@ -413,11 +486,11 @@ Examples:
   # Use specific provider
   PYTHONPATH=. python main.py --provider openai --query "Hello"
 
+  # List MCP servers
+  PYTHONPATH=. python main.py --list-mcp-servers
+
   # List all sessions
   PYTHONPATH=. python main.py --list-sessions
-
-  # Export session to text
-  PYTHONPATH=. python main.py --export-history default ./history.txt
         """
     )
 
@@ -492,7 +565,30 @@ Examples:
         help="Export session to file (json or text)"
     )
 
+    # MCP arguments
+    parser.add_argument(
+        "--list-mcp-servers",
+        action="store_true",
+        help="List configured MCP servers"
+    )
+
+    parser.add_argument(
+        "--mcp-config",
+        metavar="FILE",
+        help="Path to MCP config file (default: mcp_servers.json)"
+    )
+
+    parser.add_argument(
+        "--mcp-connect",
+        metavar="SERVER",
+        help="Connect to a specific MCP server"
+    )
+
     args = parser.parse_args()
+
+    # Override MCP config if specified
+    if args.mcp_config:
+        os.environ["MCP_CONFIG_FILE"] = args.mcp_config
 
     # Load config
     config = load_config(args.env)
@@ -505,9 +601,48 @@ Examples:
         print(f"\nDefault provider: {config.default_provider}")
         return 0
 
-    # History commands (no provider needed)
-    if args.list_sessions:
-        cmd_list_sessions(config)
+    # MCP commands (no provider needed)
+    if args.list_mcp_servers:
+        from mcp import MCPToolRegistry
+        mcp_config_file = args.mcp_config or config.mcp_config_file
+        registry = MCPToolRegistry.from_mcp_config(mcp_config_file)
+        print("\nConfigured MCP servers:")
+        print("-" * 60)
+        for server_name in registry.server_names:
+            print(f"  - {server_name}")
+        print(f"\nTotal: {len(registry.server_names)} servers")
+        return 0
+
+    if args.mcp_connect:
+        from mcp import MCPToolRegistry
+        import asyncio
+        mcp_config_file = args.mcp_config or config.mcp_config_file
+        registry = MCPToolRegistry.from_mcp_config(mcp_config_file)
+        server_name = args.mcp_connect
+
+        if server_name not in registry.server_names:
+            print(f"Error: MCP server '{server_name}' not found in config")
+            print(f"Available servers: {registry.server_names}")
+            return 1
+
+        print(f"Connecting to MCP server '{server_name}'...")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        results = loop.run_until_complete(registry.connect(server_name))
+
+        if results.get(server_name, False):
+            print(f"Successfully connected to '{server_name}'")
+            tools = registry.list_tools(server_name)
+            print(f"Available tools ({len(tools)}):")
+            for tool in tools[:10]:  # Show first 10 tools
+                print(f"  - {tool.name}")
+            if len(tools) > 10:
+                print(f"  ... and {len(tools) - 10} more")
+        else:
+            print(f"Failed to connect to '{server_name}'")
+            return 1
+
+        loop.run_until_complete(registry.disconnect(server_name))
         return 0
 
     if args.save_history is not None:
