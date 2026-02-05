@@ -201,38 +201,17 @@ def create_agent(
     # Create tools
     tools, mcp_registry = create_tools(cfg)
 
-    # Connect to MCP servers and add MCP tools
+    # NOTE: MCP servers are NOT connected at startup to avoid hanging.
+    # Use --mcp-connect to test connections, or use /mcp in interactive mode.
+    # MCP tools will be available after connection (lazy loading).
     mcp_tools = []
-    if mcp_registry and cfg.enable_mcp:
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        results = loop.run_until_complete(mcp_registry.connect())
-
-        if verbose:
-            print(f"MCP connection results: {results}")
-
-        # Create MCP tool wrappers
-        from mcp.tool import MCPToolFactory
-        factory = MCPToolFactory()
-
-        for server_name, client in mcp_registry._clients.items():
-            if client.is_connected:
-                factory.add_server(server_name, client)
-
-        mcp_tools = factory.create_tools()
-
-        if verbose and mcp_tools:
-            print(f"Loaded {len(mcp_tools)} MCP tools from {len(mcp_registry.server_names)} servers")
-
-    # Combine tools and MCP tools
-    all_tools = tools + mcp_tools
 
     # Create agent
     agent = Agent(
         provider=provider,
-        tools=all_tools,
+        tools=tools,
         config=cfg,
+        mcp_registry=mcp_registry,  # Pass registry for lazy connection
     )
 
     return agent
@@ -254,6 +233,12 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
     print(f"Storage: {agent.history.storage_file}")
     print(f"Streaming: {'enabled' if stream else 'disabled'}")
     print(f"Available tools: {list(agent.tools.keys())}")
+
+    # Show MCP servers if configured
+    mcp_servers = agent.list_mcp_servers()
+    if mcp_servers:
+        print(f"MCP servers: {mcp_servers} (use /mcp to connect)")
+
     print("\nCommands:")
     print("  /help       - Show this help")
     print("  /reset      - Reset conversation")
@@ -263,6 +248,7 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
     print("  /export PATH - Export history to file (json or text)")
     print("  /clear      - Clear current session history")
     print("  /stream     - Toggle streaming on/off")
+    print("  /mcp        - Connect and list MCP servers/tools")
     print("  quit        - Exit")
     print("-" * 60)
 
@@ -352,33 +338,32 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
                     continue
 
                 elif cmd == "/mcp":
-                    from mcp import MCPToolRegistry, MCP_TOOL_PREFIX
                     import asyncio
 
-                    registry = MCPToolRegistry.from_mcp_config(agent.config.mcp_config_file)
-                    if not registry.server_names:
+                    servers = agent.list_mcp_servers()
+                    if not servers:
                         print("No MCP servers configured.")
                         print(f"Create mcp_servers.json or set MCP_CONFIG_FILE env var.")
                     else:
-                        print(f"\nMCP Servers ({len(registry.server_names)}):")
+                        print(f"\nMCP Servers ({len(servers)}):")
                         print("-" * 60)
 
-                        # Connect to all servers
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        loop.run_until_complete(registry.connect())
+                        # Connect and show status
+                        results = agent.connect_mcp_servers()
 
-                        for status in registry.list_servers():
-                            conn = "[connected]" if status.connected else "[disconnected]"
-                            tools = registry.list_tools(status.name)
-                            print(f"  {status.name} {conn}")
+                        for server_name in servers:
+                            client = agent._mcp_registry._clients.get(server_name)
+                            connected = client.is_connected if client else False
+                            tools = agent._mcp_registry.list_tools(server_name)
+                            conn = "[connected]" if connected else "[disconnected]"
+                            print(f"  {server_name} {conn}")
                             print(f"    Tools: {len(tools)} available")
                             for t in tools[:3]:
                                 print(f"      - {t.name}")
                             if len(tools) > 3:
                                 print(f"      ... and {len(tools) - 3} more")
 
-                        loop.run_until_complete(registry.disconnect())
+                        print("\nNote: Use /mcp to reconnect after adding new servers.")
                     continue
 
                 else:

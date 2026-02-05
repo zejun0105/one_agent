@@ -26,6 +26,7 @@ class Agent:
         tools: Optional[list[Tool]] = None,
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
+        mcp_registry: Optional = None,  # MCPToolRegistry or None
     ):
         """Initialize the agent.
 
@@ -34,10 +35,13 @@ class Agent:
             tools: Optional list of tools the agent can use
             system_prompt: Optional custom system prompt
             config: Optional configuration (uses global config if not provided)
+            mcp_registry: Optional MCP registry for lazy MCP tool loading
         """
         self.provider = provider
         self.tools = {t.name: t for t in (tools or [])}
         self.config = config or global_config
+        self._mcp_registry = mcp_registry  # Store for lazy MCP connection
+        self._mcp_connected = False
 
         # Initialize conversation history with persistence
         storage_path = self.config.get_history_storage_path()
@@ -292,6 +296,72 @@ Follow this Chain of Thought:
             del self.tools[name]
             return True
         return False
+
+    def connect_mcp_servers(self, server_name: Optional[str] = None) -> dict:
+        """Connect to MCP servers (lazy connection).
+
+        Args:
+            server_name: Optional specific server to connect, or all servers
+
+        Returns:
+            Dict of server_name -> connection_success
+        """
+        if not self._mcp_registry:
+            return {}
+
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            results = loop.run_until_complete(self._mcp_registry.connect(server_name))
+            self._mcp_connected = True
+
+            # Create MCP tool wrappers if connected
+            if results.get(server_name or "all", False) or not server_name:
+                from mcp.tool import MCPToolFactory
+                factory = MCPToolFactory()
+
+                for srv_name, client in self._mcp_registry._clients.items():
+                    if client.is_connected:
+                        factory.add_server(srv_name, client)
+
+                mcp_tools = factory.create_tools()
+                for tool in mcp_tools:
+                    self.tools[tool.name] = tool
+
+                if self.config.verbose:
+                    print(f"Loaded {len(mcp_tools)} MCP tools from {len(self._mcp_registry.server_names)} servers")
+
+            return results
+        finally:
+            loop.close()
+
+    def disconnect_mcp_servers(self) -> None:
+        """Disconnect from all MCP servers."""
+        if not self._mcp_registry or not self._mcp_connected:
+            return
+
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            loop.run_until_complete(self._mcp_registry.disconnect())
+            self._mcp_connected = False
+        finally:
+            loop.close()
+
+    def list_mcp_servers(self) -> list:
+        """List configured MCP servers.
+
+        Returns:
+            List of server names
+        """
+        if self._mcp_registry:
+            return self._mcp_registry.server_names
+        return []
 
     def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
         """Execute a list of tool calls.
