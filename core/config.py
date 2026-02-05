@@ -40,6 +40,11 @@ class Config(BaseModel):
     # Tool settings
     enable_web_search: bool = Field(default=True, description="Enable web search tool")
     enable_calculator: bool = Field(default=True, description="Enable calculator tool")
+    enable_python_code: bool = Field(default=True, description="Enable Python code execution tool")
+    enable_file_read: bool = Field(default=True, description="Enable file read tool")
+    enable_file_write: bool = Field(default=True, description="Enable file write tool")
+    enable_system: bool = Field(default=False, description="Enable system command tool (security risk)")
+    enable_wikipedia: bool = Field(default=True, description="Enable Wikipedia search tool")
 
     # UI settings
     verbose: bool = Field(default=False, description="Verbose output")
@@ -119,6 +124,11 @@ class Config(BaseModel):
             session_name=os.environ.get("SESSION_NAME", "default"),
             enable_web_search=os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true",
             enable_calculator=os.environ.get("ENABLE_CALCULATOR", "true").lower() == "true",
+            enable_python_code=os.environ.get("ENABLE_PYTHON_CODE", "true").lower() == "true",
+            enable_file_read=os.environ.get("ENABLE_FILE_READ", "true").lower() == "true",
+            enable_file_write=os.environ.get("ENABLE_FILE_WRITE", "true").lower() == "true",
+            enable_system=os.environ.get("ENABLE_SYSTEM", "false").lower() == "true",
+            enable_wikipedia=os.environ.get("ENABLE_WIKIPEDIA", "true").lower() == "true",
             verbose=os.environ.get("VERBOSE", "false").lower() == "true",
             colors=os.environ.get("COLORS", "true").lower() == "true",
         )

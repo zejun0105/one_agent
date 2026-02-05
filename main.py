@@ -33,6 +33,11 @@ from providers import (
 from tools import (
     WebSearchTool,
     CalculatorTool,
+    PythonCodeTool,
+    FileReadTool,
+    FileWriteTool,
+    SystemCommandTool,
+    WikipediaTool,
 )
 
 
@@ -109,11 +114,28 @@ def create_tools(config: Config) -> list:
     """
     tools = []
 
+    # Core tools (always available)
     if config.enable_web_search:
         tools.append(WebSearchTool())
 
     if config.enable_calculator:
         tools.append(CalculatorTool())
+
+    # Advanced tools
+    if config.enable_python_code:
+        tools.append(PythonCodeTool())
+
+    if config.enable_file_read:
+        tools.append(FileReadTool())
+
+    if config.enable_file_write:
+        tools.append(FileWriteTool())
+
+    if config.enable_system:
+        tools.append(SystemCommandTool())
+
+    if config.enable_wikipedia:
+        tools.append(WikipediaTool())
 
     return tools
 

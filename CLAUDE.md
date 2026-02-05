@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, conversation history persistence, and streaming response.
+One-Agent is a modular Multi-Model Business Agent framework with full SDK integration, multi-provider support, conversation history persistence, streaming response, and comprehensive tool system.
 
 ## Tech Stack
 
@@ -70,7 +70,11 @@ one-agent/
     ├── __init__.py      # Exports all tools
     ├── base.py          # Abstract Tool class, ToolResult
     ├── web_search.py    # DuckDuckGo web search
-    └── calculator.py    # Mathematical expression evaluator
+    ├── calculator.py    # Mathematical expression evaluator
+    ├── python_code.py   # Python code execution
+    ├── file_tool.py     # File read/write
+    ├── system.py        # System command execution
+    └── wikipedia.py      # Wikipedia search
 ```
 
 ### Component Interaction
@@ -85,7 +89,7 @@ CLI (main.py)
     │   │   └─→ AnthropicProvider | OpenAIProvider | CompatibleProvider
     │   │
     │   └─→ create_tools()
-    │       └─→ WebSearchTool | CalculatorTool
+    │       └─→ All enabled tools
     │
     └─→ Agent
         ├─→ ConversationHistory (auto-save to ~/.one_agent/history/{session}.json)
@@ -114,6 +118,66 @@ CLI (main.py)
 | `LLMResponse` | Non-streaming response |
 | `Tool` | Abstract base for tools |
 | `ToolResult` | Structured result with success/content/error |
+
+## Tools
+
+### Available Tools
+
+| Tool | Name | Description | Enabled by Default |
+|------|------|-------------|-------------------|
+| `WebSearchTool` | `web_search` | DuckDuckGo web search | Yes |
+| `CalculatorTool` | `calculator` | Mathematical calculations | Yes |
+| `PythonCodeTool` | `python_code` | Safe Python code execution | Yes |
+| `FileReadTool` | `file_read` | Read file contents | Yes |
+| `FileWriteTool` | `file_write` | Write content to files | Yes |
+| `SystemCommandTool` | `system` | Execute system commands | No (security risk) |
+| `WikipediaTool` | `wikipedia` | Wikipedia search | Yes |
+
+### Tool Usage Examples
+
+```python
+# Calculator
+{"tool": "calculator", "parameters": {"expression": "sqrt(16) + 2"}}
+
+# Python code execution
+{"tool": "python_code", "parameters": {"code": "print([x**2 for x in range(5)])"}}
+
+# File read
+{"tool": "file_read", "parameters": {"path": "/path/to/file.txt"}}
+
+# File write
+{"tool": "file_write", "parameters": {"path": "/path/to/file.txt", "content": "Hello!", "mode": "w"}}
+
+# Web search
+{"tool": "web_search", "parameters": {"query": "Python 3.12 release date"}}
+
+# Wikipedia
+{"tool": "wikipedia", "parameters": {"query": "Machine learning", "lang": "en"}}
+
+# System command (if enabled)
+{"tool": "system", "parameters": {"command": "ls -la", "shell": false}}
+```
+
+### Tool Configuration
+
+Enable/disable tools via environment variables:
+
+```bash
+ENABLE_WEB_SEARCH=true
+ENABLE_CALCULATOR=true
+ENABLE_PYTHON_CODE=true
+ENABLE_FILE_READ=true
+ENABLE_FILE_WRITE=true
+ENABLE_SYSTEM=false        # WARNING: Security risk - enable only if needed
+ENABLE_WIKIPEDIA=true
+```
+
+### Security Notes
+
+- **System commands** (`system` tool) are disabled by default due to security risks
+- **File tools** support `allowed_dirs` parameter for path restrictions
+- **Python code** tool uses a sandboxed environment with limited builtins
+- System commands support `allowed_commands` list for whitelisting
 
 ## Streaming
 
@@ -205,18 +269,26 @@ HISTORY_STORAGE_DIR=~/.one_agent/history
 AUTO_SAVE_HISTORY=true
 SESSION_NAME=default
 
+# Tools (see Tools section for details)
 ENABLE_WEB_SEARCH=true
 ENABLE_CALCULATOR=true
+ENABLE_PYTHON_CODE=true
+ENABLE_FILE_READ=true
+ENABLE_FILE_WRITE=true
+ENABLE_SYSTEM=false        # WARNING: Security risk
+ENABLE_WIKIPEDIA=true
+
 VERBOSE=false
 ```
 
 ## Conventions
 
 - **Provider keys**: `anthropic`, `openai`, `glm`, `kimi`
-- **Tool names**: lowercase with underscores (`web_search`, `calculator`)
+- **Tool names**: lowercase with underscores (`web_search`, `python_code`, `file_read`)
 - **Message roles**: `system`, `user`, `assistant`, `tool`
 - **Provider naming**: ProviderConfig with `provider`, `api_key`, `model`, `base_url`
 - **Error handling**: Tools return `ToolResult(success, content, error)`
 - **Model detection**: CompatibleProvider auto-detects native tool support
 - **Session files**: Named JSON files in history storage directory
 - **Streaming**: Use `Agent.stream()` for streaming responses
+- **Tool creation**: Subclass `Tool` and implement `execute()`
