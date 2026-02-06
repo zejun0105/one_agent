@@ -27,6 +27,7 @@ class Agent:
         system_prompt: Optional[str] = None,
         config: Optional[Config] = None,
         mcp_registry: Optional = None,  # MCPToolRegistry or None
+        enable_web_search: bool = False,  # CLI flag for web search auto-calling
     ):
         """Initialize the agent.
 
@@ -36,12 +37,14 @@ class Agent:
             system_prompt: Optional custom system prompt
             config: Optional configuration (uses global config if not provided)
             mcp_registry: Optional MCP registry for lazy MCP tool loading
+            enable_web_search: Enable web search auto-calling via CLI
         """
         self.provider = provider
         self.tools = {t.name: t for t in (tools or [])}
         self.config = config or global_config
         self._mcp_registry = mcp_registry  # Store for lazy MCP connection
         self._mcp_connected = False
+        self._enable_web_search = enable_web_search  # CLI flag for auto web search
 
         # Initialize conversation history with persistence
         storage_path = self.config.get_history_storage_path()
@@ -138,6 +141,18 @@ Follow this Chain of Thought:
         max_iters = max_iterations or self.config.max_iterations
         self.history.add_user(user_input)
 
+        # Auto web search if enabled via CLI flag
+        if self._enable_web_search and "web_search" in self.tools:
+            web_search_tool = self.tools["web_search"]
+            search_result = web_search_tool.execute(query=user_input)
+
+            # Silently handle web_search failures - don't affect the flow
+            if search_result.success and search_result.content:
+                # Add search results as a system message for context
+                self.history.add_system(
+                    f"Web search results for '{user_input}':\n\n{search_result.content}"
+                )
+
         for iteration in range(max_iters):
             self._print_iteration(iteration + 1, max_iters)
 
@@ -190,6 +205,18 @@ Follow this Chain of Thought:
             Final response content
         """
         self.history.add_user(user_input)
+
+        # Auto web search if enabled via CLI flag
+        if self._enable_web_search and "web_search" in self.tools:
+            web_search_tool = self.tools["web_search"]
+            search_result = web_search_tool.execute(query=user_input)
+
+            # Silently handle web_search failures - don't affect the flow
+            if search_result.success and search_result.content:
+                self.history.add_system(
+                    f"Web search results for '{user_input}':\n\n{search_result.content}"
+                )
+
         full_response = ""
         max_iters = self.config.max_iterations
 
@@ -383,6 +410,16 @@ Follow this Chain of Thought:
             if tool_name in self.tools:
                 tool = self.tools[tool_name]
                 result = tool.execute(**arguments)
+
+                # If web_search fails, silently return empty success result
+                # This prevents errors from being shown to the LLM and allows
+                # the agent to continue without the search results
+                if tool_name == "web_search" and not result.success:
+                    result = ToolResult(
+                        success=True,
+                        content="",
+                        tool_call_id=result.tool_call_id
+                    )
             else:
                 result = ToolResult(
                     success=False,

@@ -113,19 +113,21 @@ def create_provider(provider_config: ProviderConfig) -> Optional:
     return None
 
 
-def create_tools(config: Config) -> tuple:
+def create_tools(config: Config, enable_web_search_cli: bool = False) -> tuple:
     """Create tools based on configuration.
 
     Args:
         config: Configuration object
+        enable_web_search_cli: CLI flag to enable web search auto-calling
 
     Returns:
         Tuple of (list of Tool instances, MCP registry if enabled)
     """
     tools = []
 
-    # Core tools (always available)
-    if config.enable_web_search:
+    # Core tools
+    # web_search is controlled by CLI flag, not by LLM semantic decision
+    if config.enable_web_search or enable_web_search_cli:
         tools.append(WebSearchTool(
             provider=config.web_search_provider,
             api_key=config.google_api_key,
@@ -166,6 +168,7 @@ def create_agent(
     provider_name: Optional[str] = None,
     config: Optional[Config] = None,
     verbose: bool = False,
+    enable_web_search: bool = False,
 ) -> Optional[Agent]:
     """Create an agent instance.
 
@@ -173,6 +176,7 @@ def create_agent(
         provider_name: Name of provider to use
         config: Optional configuration override
         verbose: Enable verbose output
+        enable_web_search: Enable web search auto-calling via CLI
 
     Returns:
         Agent instance or None if no provider available
@@ -190,8 +194,8 @@ def create_agent(
         print(f"\nAvailable providers: {list(cfg.providers.keys())}")
         print("\nPlease set the appropriate API key in .env:")
         print("  ANTHROPIC_API_KEY=your_key      # For Claude")
-        print("  OPENAI_API_KEY=your_key         # For GPT-4")
-        print("  GLM_API_KEY=your_key            # For GLM-4")
+        print("  OPENAI_API_KEY=your_key          # For GPT-4")
+        print("  GLM_API_KEY=your_key             # For GLM-4")
         print("  KIMI_API_KEY=your_key           # For Kimi")
         return None
 
@@ -204,7 +208,7 @@ def create_agent(
         return None
 
     # Create tools
-    tools, mcp_registry = create_tools(cfg)
+    tools, mcp_registry = create_tools(cfg, enable_web_search_cli=enable_web_search)
 
     # NOTE: MCP servers are NOT connected at startup to avoid hanging.
     # Use --mcp-connect to test connections, or use /mcp in interactive mode.
@@ -217,6 +221,7 @@ def create_agent(
         tools=tools,
         config=cfg,
         mcp_registry=mcp_registry,  # Pass registry for lazy connection
+        enable_web_search=enable_web_search,  # Store CLI flag
     )
 
     return agent
@@ -294,6 +299,9 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
     print("  /mcp        - Connect and list MCP servers/tools")
     print("  quit        - Exit")
     print("-" * 60)
+
+    # Keywords to trigger web search in interactive mode
+    SEARCH_KEYWORDS = ["搜索", "search", "查找", "最新", "新闻", "recent", "latest"]
 
     try:
         while True:
@@ -415,11 +423,24 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
                     continue
 
             print()
+
+            # Check if user input contains search intent
+            should_search = any(kw.lower() in user_input.lower() for kw in SEARCH_KEYWORDS)
+
+            # Save original state and temporarily enable web_search if needed
+            original_web_search = agent._enable_web_search
+            if should_search and "web_search" in agent.tools:
+                agent._enable_web_search = True
+
             if stream:
                 response = agent.stream(user_input)
                 print()  # Newline after streaming
             else:
                 response = agent.run(user_input)
+
+            # Restore original state
+            agent._enable_web_search = original_web_search
+
             print(f"\nAgent: {response}")
 
     except KeyboardInterrupt:
@@ -556,6 +577,13 @@ Examples:
         "--stream", "-s",
         action="store_true",
         help="Enable streaming response"
+    )
+
+    # Web search option
+    parser.add_argument(
+        "--web-search", "-w",
+        action="store_true",
+        help="Enable web search auto-calling (searches for every query)"
     )
 
     # History commands
@@ -705,6 +733,7 @@ Examples:
         provider_name=args.provider,
         config=config,
         verbose=args.verbose,
+        enable_web_search=args.web_search,
     )
 
     if not agent:
