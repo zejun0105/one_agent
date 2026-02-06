@@ -87,6 +87,7 @@ class Config(BaseModel):
                 provider="anthropic",
                 api_key=anthropic_key,
                 model=os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+                base_url=os.environ.get("ANTHROPIC_BASE_URL"),
             )
 
         # OpenAI provider
