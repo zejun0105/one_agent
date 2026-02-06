@@ -95,6 +95,29 @@ class CompatibleProvider(BaseLLMProvider):
             formatted.append(tool_def)
         return formatted
 
+    def format_tools_for_glm(self, tools: List[dict]) -> List[dict]:
+        """Format tools for GLM API specifically."""
+        formatted = []
+        for tool in tools:
+            params = tool.get("parameters", {})
+            if isinstance(params, dict) and "properties" not in params:
+                params = {
+                    "type": "object",
+                    "properties": params.get("properties", {}),
+                    "required": params.get("required", [])
+                }
+
+            # GLM format with explicit type
+            tool_def = {
+                "type": "function_call",  # GLM requires specific type value
+                "function": {
+                    "name": tool["name"],
+                    "parameters": params
+                }
+            }
+            formatted.append(tool_def)
+        return formatted
+
     def parse_response(self, response) -> LLMResponse:
         """Parse API response."""
         if hasattr(response, 'choices') and response.choices:
@@ -321,15 +344,14 @@ When using a tool, format your response as:
         }
 
         if tools:
-            # Format tools based on provider
-            formatted_tools = self.format_tools(tools)
-
             if self.provider_name == "glm":
-                # GLM API format
-                params["tools"] = formatted_tools
+                # GLM-specific format
+                formatted_tools = self.format_tools_for_glm(tools)
+                params["functions"] = formatted_tools
                 params["tool_choice"] = "auto"
             else:
                 # Standard OpenAI-compatible format
+                formatted_tools = self.format_tools(tools)
                 params["tools"] = formatted_tools
                 params["tool_choice"] = "auto"
 
