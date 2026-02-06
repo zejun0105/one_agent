@@ -133,11 +133,9 @@ class CompatibleProvider(BaseLLMProvider):
                     try:
                         args_str = tc.function.arguments or "{}"
                         # Handle unquoted JSON (some LLMs return unquoted keys)
-                        import re
-                        # Fix unquoted keys like {key: "value"} to {"key": "value"}
                         fixed_args = re.sub(r'(\w+):', r'"\1":', args_str)
                         arguments = json.loads(fixed_args) if fixed_args.strip() else {}
-                    except (json.JSONDecodeError, AttributeError) as e:
+                    except (json.JSONDecodeError, AttributeError):
                         arguments = {}
 
                     tool_calls.append(ToolCall(
@@ -185,7 +183,6 @@ class CompatibleProvider(BaseLLMProvider):
                             try:
                                 args_str = tc.function.arguments or ""
                                 # Handle unquoted JSON
-                                import re
                                 fixed_args = re.sub(r'(\w+):', r'"\1":', args_str)
                                 arguments = json.loads(fixed_args) if fixed_args.strip() else {}
                             except (json.JSONDecodeError, AttributeError):

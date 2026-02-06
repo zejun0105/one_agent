@@ -122,7 +122,6 @@ class OpenAIProvider(BaseLLMProvider):
                             try:
                                 args_str = tc.function.arguments or ""
                                 # Handle unquoted JSON
-                                import re
                                 fixed_args = re.sub(r'(\w+):', r'"\1":', args_str)
                                 arguments = json.loads(fixed_args) if fixed_args.strip() else {}
                             except (json.JSONDecodeError, AttributeError):
