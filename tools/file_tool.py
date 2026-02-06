@@ -62,7 +62,7 @@ class FileReadTool(Tool):
 
         Args:
             path: Path to file
-            encoding: File encoding
+            encoding: File encoding (auto-detect if utf-8 fails)
 
         Returns:
             ToolResult with file contents
@@ -95,7 +95,26 @@ class FileReadTool(Tool):
                     tool_call_id=tool_id
                 )
 
-            content = file_path.read_text(encoding=encoding)
+            # Try UTF-8 first, then fallback to common encodings
+            encodings_to_try = ["utf-8", "gbk", "gb2312", "gb18030", "latin1"]
+
+            content = None
+            last_error = None
+            for enc in encodings_to_try:
+                try:
+                    content = file_path.read_text(encoding=enc)
+                    break
+                except UnicodeDecodeError as e:
+                    last_error = e
+                    continue
+
+            if content is None:
+                return ToolResult(
+                    success=False,
+                    content="",
+                    error=f"Failed to decode file with any encoding: {last_error}",
+                    tool_call_id=tool_id
+                )
 
             return ToolResult(
                 success=True,
