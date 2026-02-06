@@ -1,6 +1,7 @@
 """OpenAI (GPT-4) provider implementation."""
 
 import json
+import re
 from typing import Optional, List, Any, Generator
 from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
@@ -68,14 +69,22 @@ class OpenAIProvider(BaseLLMProvider):
         tool_calls = None
 
         if hasattr(message, 'tool_calls') and message.tool_calls:
-            tool_calls = [
-                ToolCall(
+            tool_calls = []
+            for tc in message.tool_calls:
+                try:
+                    args_str = tc.function.arguments or ""
+                    # Handle unquoted JSON (some LLMs return unquoted keys)
+                    import re
+                    fixed_args = re.sub(r'(\w+):', r'"\1":', args_str)
+                    arguments = json.loads(fixed_args) if fixed_args.strip() else {}
+                except (json.JSONDecodeError, AttributeError):
+                    arguments = {}
+
+                tool_calls.append(ToolCall(
                     id=tc.id,
                     name=tc.function.name,
-                    arguments=json.loads(tc.function.arguments)
-                )
-                for tc in message.tool_calls
-            ]
+                    arguments=arguments
+                ))
 
         # Get usage info
         usage = None
@@ -110,11 +119,19 @@ class OpenAIProvider(BaseLLMProvider):
                     tool_calls = []
                     for tc in choice.delta.tool_calls:
                         if tc.function:
-                            arguments = tc.function.arguments or ""
+                            try:
+                                args_str = tc.function.arguments or ""
+                                # Handle unquoted JSON
+                                import re
+                                fixed_args = re.sub(r'(\w+):', r'"\1":', args_str)
+                                arguments = json.loads(fixed_args) if fixed_args.strip() else {}
+                            except (json.JSONDecodeError, AttributeError):
+                                arguments = {}
+
                             tool_calls.append(ToolCall(
                                 id=tc.id or f"call_{len(tool_calls)}",
                                 name=tc.function.name,
-                                arguments=json.loads(arguments) if arguments else {}
+                                arguments=arguments
                             ))
 
             # Check for completion
