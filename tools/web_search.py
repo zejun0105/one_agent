@@ -125,7 +125,7 @@ class WebSearchTool(Tool):
 
         return results
 
-    def execute(self, query: str, num_results: int = None) -> ToolResult:
+    def execute(self, query: str = None, num_results: int = None, **kwargs) -> ToolResult:
         """Execute web search.
 
         Args:
@@ -136,6 +136,15 @@ class WebSearchTool(Tool):
             ToolResult with search results
         """
         import uuid
+
+        # Check required parameter
+        if query is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'query'",
+                tool_call_id=f"search_{uuid.uuid4().hex[:8]}"
+            )
 
         try:
             if self.provider == "google":
