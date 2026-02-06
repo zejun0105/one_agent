@@ -6,6 +6,65 @@ from typing import Optional, List, Any, Generator
 from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
+def _format_tool_calls(tool_calls: list) -> list:
+    """Format tool calls to include required type field."""
+    if not tool_calls:
+        return tool_calls
+
+    formatted = []
+    for tc in tool_calls:
+        if isinstance(tc, dict):
+            formatted.append({
+                "id": tc.get("id", ""),
+                "type": "function",
+                "function": {
+                    "name": tc.get("name", ""),
+                    "arguments": json.dumps(tc.get("arguments", {}))
+                }
+            })
+        else:
+            # Handle object-style tool calls
+            formatted.append(tc)
+    return formatted
+
+
+def _format_message(message: dict) -> dict:
+    """Format message for API providers that require type field."""
+    # Many OpenAI-compatible APIs (DeepSeek, etc.) require 'type' field for messages
+    role = message.get("role")
+
+    if role == "tool":
+        return {
+            "role": "tool",
+            "content": message.get("content", ""),
+            "tool_call_id": message.get("tool_call_id", ""),
+            "type": "tool"
+        }
+    elif role == "assistant":
+        result = {
+            "role": "assistant",
+            "type": "message",
+        }
+        if message.get("content"):
+            result["content"] = message.get("content")
+        if message.get("tool_calls"):
+            result["tool_calls"] = _format_tool_calls(message.get("tool_calls"))
+        return result
+    elif role == "system":
+        return {
+            "role": "system",
+            "content": message.get("content", ""),
+            "type": "message"
+        }
+    elif role == "user":
+        return {
+            "role": "user",
+            "content": message.get("content", ""),
+            "type": "message"
+        }
+    return message
+
+
 class OpenAIProvider(BaseLLMProvider):
     """Provider for OpenAI's GPT-4 models."""
 
@@ -150,10 +209,13 @@ class OpenAIProvider(BaseLLMProvider):
         **kwargs
     ) -> LLMResponse:
         """Send chat request to OpenAI."""
+        # Format messages for APIs that require type field for messages
+        formatted_messages = [_format_message(msg) for msg in messages]
+
         # Build request parameters
         params = {
             "model": self._model,
-            "messages": messages,
+            "messages": formatted_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             **kwargs
@@ -176,10 +238,13 @@ class OpenAIProvider(BaseLLMProvider):
         **kwargs
     ) -> Generator[StreamChunk, None, None]:
         """Stream chat request to OpenAI."""
+        # Format messages for APIs that require type field for messages
+        formatted_messages = [_format_message(msg) for msg in messages]
+
         # Build request parameters
         params = {
             "model": self._model,
-            "messages": messages,
+            "messages": formatted_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": True,

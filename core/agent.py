@@ -139,19 +139,26 @@ Follow this Chain of Thought:
             The agent's response
         """
         max_iters = max_iterations or self.config.max_iterations
-        self.history.add_user(user_input)
 
         # Auto web search if enabled via CLI flag
+        # Only provide web_search tool, disable other search tools
+        web_search_tool_backup = None
+        other_search_tools_backup = {}
         if self._enable_web_search and "web_search" in self.tools:
-            web_search_tool = self.tools["web_search"]
-            search_result = web_search_tool.execute(query=user_input)
+            # Backup web_search tool
+            web_search_tool_backup = self.tools.pop("web_search", None)
 
-            # Silently handle web_search failures - don't affect the flow
-            if search_result.success and search_result.content:
-                # Add search results as a system message for context
-                self.history.add_system(
-                    f"Web search results for '{user_input}':\n\n{search_result.content}"
-                )
+            # Remove other search tools (wikipedia) to force LLM to use web_search
+            search_related = ["wikipedia"]
+            for tool_name in search_related:
+                if tool_name in self.tools:
+                    other_search_tools_backup[tool_name] = self.tools.pop(tool_name, None)
+
+            # Restore only web_search tool
+            if web_search_tool_backup:
+                self.tools["web_search"] = web_search_tool_backup
+
+        self.history.add_user(user_input)
 
         for iteration in range(max_iters):
             self._print_iteration(iteration + 1, max_iters)
@@ -188,8 +195,20 @@ Follow this Chain of Thought:
             else:
                 # No more tool calls, return the response
                 self._print_success()
+                # Restore all tools
+                if web_search_tool_backup:
+                    self.tools["web_search"] = web_search_tool_backup
+                for tool_name, tool in other_search_tools_backup.items():
+                    if tool:
+                        self.tools[tool_name] = tool
                 return response.content
 
+        # Restore all tools on max iterations
+        if web_search_tool_backup:
+            self.tools["web_search"] = web_search_tool_backup
+        for tool_name, tool in other_search_tools_backup.items():
+            if tool:
+                self.tools[tool_name] = tool
         return "Maximum iterations reached. Task incomplete."
 
     def stream(self, user_input: str, callback=None) -> Generator[StreamChunk, None, str]:
@@ -204,19 +223,25 @@ Follow this Chain of Thought:
         Returns:
             Final response content
         """
-        self.history.add_user(user_input)
-
         # Auto web search if enabled via CLI flag
+        # Only provide web_search tool, disable other search tools
+        web_search_tool_backup = None
+        other_search_tools_backup = {}
         if self._enable_web_search and "web_search" in self.tools:
-            web_search_tool = self.tools["web_search"]
-            search_result = web_search_tool.execute(query=user_input)
+            # Backup web_search tool
+            web_search_tool_backup = self.tools.pop("web_search", None)
 
-            # Silently handle web_search failures - don't affect the flow
-            if search_result.success and search_result.content:
-                self.history.add_system(
-                    f"Web search results for '{user_input}':\n\n{search_result.content}"
-                )
+            # Remove other search tools (wikipedia) to force LLM to use web_search
+            search_related = ["wikipedia"]
+            for tool_name in search_related:
+                if tool_name in self.tools:
+                    other_search_tools_backup[tool_name] = self.tools.pop(tool_name, None)
 
+            # Restore only web_search tool
+            if web_search_tool_backup:
+                self.tools["web_search"] = web_search_tool_backup
+
+        self.history.add_user(user_input)
         full_response = ""
         max_iters = self.config.max_iterations
 
@@ -256,8 +281,20 @@ Follow this Chain of Thought:
 
             # No more tool calls, return the response
             self._print_success()
+            # Restore all tools
+            if web_search_tool_backup:
+                self.tools["web_search"] = web_search_tool_backup
+            for tool_name, tool in other_search_tools_backup.items():
+                if tool:
+                    self.tools[tool_name] = tool
             return full_response
 
+        # Restore all tools on max iterations
+        if web_search_tool_backup:
+            self.tools["web_search"] = web_search_tool_backup
+        for tool_name, tool in other_search_tools_backup.items():
+            if tool:
+                self.tools[tool_name] = tool
         return "Maximum iterations reached. Task incomplete."
 
     def _print_streaming_chunk(self, chunk: StreamChunk) -> None:
@@ -411,6 +448,10 @@ Follow this Chain of Thought:
                 tool = self.tools[tool_name]
                 result = tool.execute(**arguments)
 
+                # Use the LLM-generated tool_call_id to match the assistant message
+                call_id = call.id if hasattr(call, 'id') else call.get('id', 'unknown')
+                result.tool_call_id = call_id
+
                 # If web_search fails, silently return empty success result
                 # This prevents errors from being shown to the LLM and allows
                 # the agent to continue without the search results
@@ -418,7 +459,7 @@ Follow this Chain of Thought:
                     result = ToolResult(
                         success=True,
                         content="",
-                        tool_call_id=result.tool_call_id
+                        tool_call_id=call_id
                     )
             else:
                 result = ToolResult(

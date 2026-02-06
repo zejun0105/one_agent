@@ -113,12 +113,16 @@ def create_provider(provider_config: ProviderConfig) -> Optional:
     return None
 
 
-def create_tools(config: Config, enable_web_search_cli: bool = False) -> tuple:
+def create_tools(config: Config, enable_web_search_cli: bool = False,
+                 google_api_key: Optional[str] = None,
+                 google_search_engine_id: Optional[str] = None) -> tuple:
     """Create tools based on configuration.
 
     Args:
         config: Configuration object
         enable_web_search_cli: CLI flag to enable web search auto-calling
+        google_api_key: Google API key (CLI override)
+        google_search_engine_id: Google Search Engine ID (CLI override)
 
     Returns:
         Tuple of (list of Tool instances, MCP registry if enabled)
@@ -130,8 +134,8 @@ def create_tools(config: Config, enable_web_search_cli: bool = False) -> tuple:
     if config.enable_web_search or enable_web_search_cli:
         tools.append(WebSearchTool(
             provider=config.web_search_provider,
-            api_key=config.google_api_key,
-            search_engine_id=config.google_search_engine_id,
+            api_key=google_api_key or config.google_api_key,
+            search_engine_id=google_search_engine_id or config.google_search_engine_id,
         ))
 
     if config.enable_calculator:
@@ -169,6 +173,8 @@ def create_agent(
     config: Optional[Config] = None,
     verbose: bool = False,
     enable_web_search: bool = False,
+    google_api_key: Optional[str] = None,
+    google_search_engine_id: Optional[str] = None,
 ) -> Optional[Agent]:
     """Create an agent instance.
 
@@ -177,6 +183,8 @@ def create_agent(
         config: Optional configuration override
         verbose: Enable verbose output
         enable_web_search: Enable web search auto-calling via CLI
+        google_api_key: Google API key (CLI override)
+        google_search_engine_id: Google Search Engine ID (CLI override)
 
     Returns:
         Agent instance or None if no provider available
@@ -208,7 +216,12 @@ def create_agent(
         return None
 
     # Create tools
-    tools, mcp_registry = create_tools(cfg, enable_web_search_cli=enable_web_search)
+    tools, mcp_registry = create_tools(
+        cfg,
+        enable_web_search_cli=enable_web_search,
+        google_api_key=google_api_key,
+        google_search_engine_id=google_search_engine_id,
+    )
 
     # NOTE: MCP servers are NOT connected at startup to avoid hanging.
     # Use --mcp-connect to test connections, or use /mcp in interactive mode.
@@ -586,6 +599,19 @@ Examples:
         help="Enable web search auto-calling (searches for every query)"
     )
 
+    # Google search API credentials
+    parser.add_argument(
+        "--google-api-key",
+        metavar="KEY",
+        help="Google Custom Search API key"
+    )
+
+    parser.add_argument(
+        "--google-search-engine-id",
+        metavar="ID",
+        help="Google Custom Search Engine ID"
+    )
+
     # History commands
     parser.add_argument(
         "--list-sessions",
@@ -734,6 +760,8 @@ Examples:
         config=config,
         verbose=args.verbose,
         enable_web_search=args.web_search,
+        google_api_key=args.google_api_key,
+        google_search_engine_id=args.google_search_engine_id,
     )
 
     if not agent:

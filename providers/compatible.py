@@ -6,6 +6,43 @@ from typing import Optional, List, Any, Generator
 from .base import BaseLLMProvider, LLMResponse, ToolCall, StreamChunk
 
 
+def _format_message(message: dict) -> dict:
+    """Format message for API providers that require type field."""
+    # Many OpenAI-compatible APIs (DeepSeek, GLM, etc.) require 'type' field for messages
+    role = message.get("role")
+
+    if role == "tool":
+        return {
+            "role": "tool",
+            "content": message.get("content", ""),
+            "tool_call_id": message.get("tool_call_id", ""),
+            "type": "tool"
+        }
+    elif role == "assistant":
+        result = {
+            "role": "assistant",
+            "type": "message",
+        }
+        if message.get("content"):
+            result["content"] = message.get("content")
+        if message.get("tool_calls"):
+            result["tool_calls"] = message.get("tool_calls")
+        return result
+    elif role == "system":
+        return {
+            "role": "system",
+            "content": message.get("content", ""),
+            "type": "message"
+        }
+    elif role == "user":
+        return {
+            "role": "user",
+            "content": message.get("content", ""),
+            "type": "message"
+        }
+    return message
+
+
 class CompatibleProvider(BaseLLMProvider):
     """Provider for compatible APIs like GLM-4 (智谱 AI) and Kimi (月之暗面)."""
 
@@ -253,22 +290,21 @@ When using a tool, format your response as:
         return text
 
     def _format_tool_result(self, message: dict) -> dict:
-        """Format tool result message for GLM API."""
-        # GLM API requires 'type' field for tool messages
-        if self.provider_name == "glm" and message.get("role") == "tool":
+        """Format tool result message for API providers that require type field."""
+        # Many OpenAI-compatible APIs (DeepSeek, GLM, etc.) require 'type' field for tool messages
+        if message.get("role") == "tool" and "type" not in message:
             return {
                 "role": "tool",
                 "content": message.get("content", ""),
                 "tool_call_id": message.get("tool_call_id", ""),
-                "type": "tool"  # GLM requires this field
+                "type": "tool"
             }
         return message
 
     def _format_messages(self, messages: List[dict]) -> List[dict]:
         """Format messages for the API provider."""
-        if self.provider_name == "glm":
-            return [self._format_tool_result(msg) for msg in messages]
-        return messages
+        # Many OpenAI-compatible APIs require 'type' field for messages
+        return [_format_message(msg) for msg in messages]
 
     def chat(
         self,
@@ -277,12 +313,15 @@ When using a tool, format your response as:
         **kwargs
     ) -> LLMResponse:
         """Send chat request to compatible API."""
+        # Format messages for APIs that require type field for messages
+        formatted_messages = [_format_message(msg) for msg in messages]
+
         if not self.supports_native_tools and tools:
             # Use text-based tool calling (fallback mode)
-            return self._chat_with_text_tools(messages, tools, **kwargs)
+            return self._chat_with_text_tools(formatted_messages, tools, **kwargs)
         else:
-            # Use native tool calling
-            return self._chat_native(messages, tools, **kwargs)
+            # Native tool calling
+            return self._chat_native(formatted_messages, tools, **kwargs)
 
     def stream(
         self,
@@ -307,8 +346,9 @@ When using a tool, format your response as:
             return
 
         # Native streaming
-        # Format messages for GLM API
+        # Format messages for the API
         formatted_messages = self._format_messages(messages)
+
         params = {
             "model": self._model,
             "messages": formatted_messages,
@@ -346,7 +386,7 @@ When using a tool, format your response as:
         **kwargs
     ) -> LLMResponse:
         """Chat with native tool support."""
-        # Format messages for GLM API
+        # Format messages for the API
         formatted_messages = self._format_messages(messages)
 
         params = {

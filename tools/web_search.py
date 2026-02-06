@@ -112,6 +112,15 @@ class WebSearchTool(Tool):
                     "url": topic.get("FirstURL", "")
                 })
 
+        # If no results, return a helpful message
+        if not results:
+            results.append({
+                "title": "No results found",
+                "source": "DuckDuckGo",
+                "snippet": f"No search results found for '{query}'. Try using Google search with an API key for better results.",
+                "url": ""
+            })
+
         return results
 
     def _search_google(self, query: str) -> list:
