@@ -182,6 +182,12 @@ Enable/disable tools via environment variables:
 
 ```bash
 ENABLE_WEB_SEARCH=true
+WEB_SEARCH_PROVIDER=duckduckgo    # Provider: duckduckgo, google
+
+# Google Custom Search API (required for GOOGLE provider)
+# GOOGLE_API_KEY=your_api_key
+# GOOGLE_SEARCH_ENGINE_ID=your_engine_id
+
 ENABLE_CALCULATOR=true
 ENABLE_PYTHON_CODE=true
 ENABLE_FILE_READ=true
@@ -189,6 +195,24 @@ ENABLE_FILE_WRITE=true
 ENABLE_SYSTEM=false        # WARNING: Security risk - enable only if needed
 ENABLE_WIKIPEDIA=true
 ```
+
+### Web Search Providers
+
+| Provider | API Key Required | Description |
+|----------|-----------------|-------------|
+| `duckduckgo` | No | Free, no configuration needed |
+| `google` | Yes | Google Custom Search JSON API |
+
+#### Google Search Setup
+
+1. Get API key: https://developers.google.com/custom-search/v1/introduction
+2. Create Search Engine: https://programmablesearchengine.google.com/
+3. Configure in `.env`:
+   ```bash
+   WEB_SEARCH_PROVIDER=google
+   GOOGLE_API_KEY=your_api_key
+   GOOGLE_SEARCH_ENGINE_ID=your_cx_id
+   ```
 
 ### Security Notes
 

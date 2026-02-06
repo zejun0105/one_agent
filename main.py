@@ -125,7 +125,11 @@ def create_tools(config: Config) -> tuple:
 
     # Core tools (always available)
     if config.enable_web_search:
-        tools.append(WebSearchTool())
+        tools.append(WebSearchTool(
+            provider=config.web_search_provider,
+            api_key=config.google_api_key,
+            search_engine_id=config.google_search_engine_id,
+        ))
 
     if config.enable_calculator:
         tools.append(CalculatorTool())

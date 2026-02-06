@@ -43,6 +43,9 @@ class Config(BaseModel):
 
     # Tool settings
     enable_web_search: bool = Field(default=True, description="Enable web search tool")
+    web_search_provider: str = Field(default="duckduckgo", description="Web search provider (duckduckgo, google)")
+    google_api_key: Optional[str] = Field(None, description="Google Custom Search API key")
+    google_search_engine_id: Optional[str] = Field(None, description="Google Custom Search Engine ID")
     enable_calculator: bool = Field(default=True, description="Enable calculator tool")
     enable_python_code: bool = Field(default=True, description="Enable Python code execution tool")
     enable_file_read: bool = Field(default=True, description="Enable file read tool")
@@ -129,6 +132,9 @@ class Config(BaseModel):
             mcp_config_file=os.environ.get("MCP_CONFIG_FILE", "mcp_servers.json"),
             enable_mcp=os.environ.get("ENABLE_MCP", "true").lower() == "true",
             enable_web_search=os.environ.get("ENABLE_WEB_SEARCH", "true").lower() == "true",
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "duckduckgo"),
+            google_api_key=os.environ.get("GOOGLE_API_KEY"),
+            google_search_engine_id=os.environ.get("GOOGLE_SEARCH_ENGINE_ID"),
             enable_calculator=os.environ.get("ENABLE_CALCULATOR", "true").lower() == "true",
             enable_python_code=os.environ.get("ENABLE_PYTHON_CODE", "true").lower() == "true",
             enable_file_read=os.environ.get("ENABLE_FILE_READ", "true").lower() == "true",
