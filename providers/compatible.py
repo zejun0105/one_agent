@@ -215,6 +215,24 @@ When using a tool, format your response as:
 """
         return text
 
+    def _format_tool_result(self, message: dict) -> dict:
+        """Format tool result message for GLM API."""
+        # GLM API requires 'type' field for tool messages
+        if self.provider_name == "glm" and message.get("role") == "tool":
+            return {
+                "role": "tool",
+                "content": message.get("content", ""),
+                "tool_call_id": message.get("tool_call_id", ""),
+                "type": "tool"  # GLM requires this field
+            }
+        return message
+
+    def _format_messages(self, messages: List[dict]) -> List[dict]:
+        """Format messages for the API provider."""
+        if self.provider_name == "glm":
+            return [self._format_tool_result(msg) for msg in messages]
+        return messages
+
     def chat(
         self,
         messages: List[dict],
@@ -252,9 +270,11 @@ When using a tool, format your response as:
             return
 
         # Native streaming
+        # Format messages for GLM API
+        formatted_messages = self._format_messages(messages)
         params = {
             "model": self._model,
-            "messages": messages,
+            "messages": formatted_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": True,
@@ -289,9 +309,12 @@ When using a tool, format your response as:
         **kwargs
     ) -> LLMResponse:
         """Chat with native tool support."""
+        # Format messages for GLM API
+        formatted_messages = self._format_messages(messages)
+
         params = {
             "model": self._model,
-            "messages": messages,
+            "messages": formatted_messages,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             **kwargs
