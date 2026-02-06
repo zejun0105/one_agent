@@ -12,6 +12,7 @@ A modular Business Agent framework with support for:
 import os
 import sys
 import argparse
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -221,6 +222,44 @@ def create_agent(
     return agent
 
 
+def parse_api_error(error: Exception) -> str:
+    """Parse API error and return user-friendly message.
+
+    Args:
+        error: The exception object
+
+    Returns:
+        User-friendly error message
+    """
+    error_str = str(error)
+
+    # Try to extract JSON error details
+    try:
+        if hasattr(error, 'response') and error.response:
+            response_data = error.response.json()
+            error_data = response_data.get('error', {})
+            code = error_data.get('code', '')
+            message = error_data.get('message', '')
+            return f"[{code}] {message}" if code else message
+    except:
+        pass
+
+    # Try to parse from string
+    try:
+        if 'RateLimitError' in error_str or '速率限制' in error_str:
+            return "Rate limit exceeded. Please slow down your requests."
+        if 'AuthenticationError' in error_str or 'API key' in error_str.lower():
+            return "Authentication failed. Please check your API key."
+        if 'BadRequestError' in error_str or 'invalid' in error_str.lower():
+            return f"Invalid request: {error_str}"
+        if 'NotFoundError' in error_str or 'not found' in error_str.lower():
+            return f"Resource not found: {error_str}"
+    except:
+        pass
+
+    return error_str
+
+
 def interactive_mode(agent: Agent, stream: bool = False) -> None:
     """Run agent in interactive mode.
 
@@ -386,7 +425,8 @@ def interactive_mode(agent: Agent, stream: bool = False) -> None:
     except KeyboardInterrupt:
         print("\n\nGoodbye!")
     except Exception as e:
-        print(f"\nError: {e}")
+        error_msg = parse_api_error(e)
+        print(f"\nError: {error_msg}")
         sys.exit(1)
 
 
@@ -676,10 +716,15 @@ Examples:
 
     # Run mode
     if args.query:
-        response = single_query(agent, args.query, stream=args.stream)
-        print()  # Add newline after streaming output
-        if response:
-            print(f"Agent: {response}")
+        try:
+            response = single_query(agent, args.query, stream=args.stream)
+            print()  # Add newline after streaming output
+            if response:
+                print(f"Agent: {response}")
+        except Exception as e:
+            error_msg = parse_api_error(e)
+            print(f"\nError: {error_msg}")
+            return 1
     else:
         interactive_mode(agent, stream=args.stream)
 
