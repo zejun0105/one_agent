@@ -54,9 +54,10 @@ class WikipediaTool(Tool):
 
     def execute(
         self,
-        query: str,
+        query: str = None,
         lang: str = None,
-        num_results: int = None
+        num_results: int = None,
+        **kwargs
     ) -> ToolResult:
         """Search Wikipedia.
 
@@ -69,6 +70,15 @@ class WikipediaTool(Tool):
             ToolResult with search results
         """
         import uuid
+
+        # Check required parameter
+        if query is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'query'",
+                tool_call_id=f"wiki_{uuid.uuid4().hex[:8]}"
+            )
 
         query_lang = lang or self.lang
         limit = num_results or self.num_results

@@ -31,7 +31,7 @@ class CalculatorTool(Tool):
             }
         )
 
-    def execute(self, expression: str) -> ToolResult:
+    def execute(self, expression: str = None, **kwargs) -> ToolResult:
         """Execute calculator operation.
 
         Args:
@@ -40,6 +40,15 @@ class CalculatorTool(Tool):
         Returns:
             ToolResult with calculation result
         """
+        # Check required parameter
+        if expression is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'expression'",
+                tool_call_id=f"calc_{uuid.uuid4().hex[:8]}"
+            )
+
         try:
             # Clean the expression
             expression = expression.strip()

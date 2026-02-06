@@ -45,7 +45,7 @@ class PythonCodeTool(Tool):
         )
         self.timeout = timeout
 
-    def execute(self, code: str, timeout: int = None) -> ToolResult:
+    def execute(self, code: str = None, timeout: int = None, **kwargs) -> ToolResult:
         """Execute Python code.
 
         Args:
@@ -55,6 +55,15 @@ class PythonCodeTool(Tool):
         Returns:
             ToolResult with execution output
         """
+        # Check required parameter
+        if code is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'code'",
+                tool_call_id=f"python_{uuid.uuid4().hex[:8]}"
+            )
+
         exec_timeout = timeout or self.timeout
         tool_id = f"python_{uuid.uuid4().hex[:8]}"
 

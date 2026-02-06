@@ -71,9 +71,10 @@ class SystemCommandTool(Tool):
 
     def execute(
         self,
-        command: str,
+        command: str = None,
         timeout: int = None,
-        shell: bool = False
+        shell: bool = False,
+        **kwargs
     ) -> ToolResult:
         """Execute a system command.
 
@@ -86,6 +87,15 @@ class SystemCommandTool(Tool):
             ToolResult with command output
         """
         tool_id = f"system_{uuid.uuid4().hex[:8]}"
+
+        # Check required parameter
+        if command is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'command'",
+                tool_call_id=tool_id
+            )
 
         # Security check
         if not self._is_allowed(command):
