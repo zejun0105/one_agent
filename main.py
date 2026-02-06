@@ -678,6 +678,8 @@ Examples:
     if args.query:
         response = single_query(agent, args.query, stream=args.stream)
         print()  # Add newline after streaming output
+        if response:
+            print(f"Agent: {response}")
     else:
         interactive_mode(agent, stream=args.stream)
 
