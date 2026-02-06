@@ -72,17 +72,28 @@ class CompatibleProvider(BaseLLMProvider):
 
     def format_tools(self, tools: List[dict]) -> List[dict]:
         """Format tools for OpenAI-compatible API."""
-        return [
-            {
+        formatted = []
+        for tool in tools:
+            # Ensure parameters have correct schema
+            params = tool.get("parameters", {})
+            if isinstance(params, dict) and "properties" not in params:
+                # Wrap in proper JSON Schema format if needed
+                params = {
+                    "type": "object",
+                    "properties": params.get("properties", {}),
+                    "required": params.get("required", [])
+                }
+
+            tool_def = {
                 "type": "function",
                 "function": {
                     "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool.get("parameters", {})
+                    "description": tool.get("description", ""),
+                    "parameters": params
                 }
             }
-            for tool in tools
-        ]
+            formatted.append(tool_def)
+        return formatted
 
     def parse_response(self, response) -> LLMResponse:
         """Parse API response."""
@@ -287,8 +298,17 @@ When using a tool, format your response as:
         }
 
         if tools:
-            params["tools"] = self.format_tools(tools)
-            params["tool_choice"] = "auto"
+            # Format tools based on provider
+            formatted_tools = self.format_tools(tools)
+
+            if self.provider_name == "glm":
+                # GLM API format
+                params["tools"] = formatted_tools
+                params["tool_choice"] = "auto"
+            else:
+                # Standard OpenAI-compatible format
+                params["tools"] = formatted_tools
+                params["tool_choice"] = "auto"
 
         response = self.client.chat.completions.create(**params)
         return self.parse_response(response)
