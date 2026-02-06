@@ -57,7 +57,7 @@ class FileReadTool(Tool):
                 continue
         return False
 
-    def execute(self, path: str, encoding: str = "utf-8") -> ToolResult:
+    def execute(self, path: str = None, encoding: str = "utf-8", **kwargs) -> ToolResult:
         """Read file contents.
 
         Args:
@@ -67,6 +67,15 @@ class FileReadTool(Tool):
         Returns:
             ToolResult with file contents
         """
+        # Check required parameter
+        if path is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'path'",
+                tool_call_id=f"read_{uuid.uuid4().hex[:8]}"
+            )
+
         tool_id = f"read_{uuid.uuid4().hex[:8]}"
 
         if not self._is_allowed(path):
@@ -207,10 +216,11 @@ class FileWriteTool(Tool):
 
     def execute(
         self,
-        path: str,
-        content: str,
+        path: str = None,
+        content: str = None,
         encoding: str = "utf-8",
-        mode: str = "w"
+        mode: str = "w",
+        **kwargs
     ) -> ToolResult:
         """Write content to file.
 
@@ -223,6 +233,22 @@ class FileWriteTool(Tool):
         Returns:
             ToolResult with result message
         """
+        # Check required parameters
+        if path is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'path'",
+                tool_call_id=f"write_{uuid.uuid4().hex[:8]}"
+            )
+        if content is None:
+            return ToolResult(
+                success=False,
+                content="",
+                error="Missing required parameter: 'content'",
+                tool_call_id=f"write_{uuid.uuid4().hex[:8]}"
+            )
+
         tool_id = f"write_{uuid.uuid4().hex[:8]}"
 
         if not self._is_allowed(path):
