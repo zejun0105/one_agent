@@ -55,6 +55,10 @@ class WebSearchTool(Tool):
 
     def _search_duckduckgo(self, query: str) -> list:
         """Search using DuckDuckGo Instant Answer API (free, no API key needed)."""
+        import urllib3
+        # Disable SSL warnings
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
         url = "https://api.duckduckgo.com/"
         params = {
             "q": query,
@@ -64,9 +68,23 @@ class WebSearchTool(Tool):
             "kl": "us-en"
         }
 
-        response = self.session.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = self.session.get(url, params=params, timeout=10, verify=False)
+            response.raise_for_status()
+        except requests.RequestException as e:
+            raise ConnectionError(f"Failed to connect to DuckDuckGo API: {e}")
+
+        # Check if response is actually JSON
+        content_type = response.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            # Try to parse anyway, but handle failure
+            try:
+                data = response.json()
+            except json.JSONDecodeError:
+                # Return empty results if API returns non-JSON
+                return []
+        else:
+            data = response.json()
 
         results = []
         if data.get("Abstract"):
@@ -109,9 +127,14 @@ class WebSearchTool(Tool):
             "num": min(self.num_results, 10)
         }
 
-        response = self.session.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = self.session.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            raise ConnectionError(f"Failed to connect to Google Search API: {e}")
+        except json.JSONDecodeError:
+            raise ValueError("Invalid response from Google Search API")
 
         results = []
         items = data.get("items", [])
@@ -183,5 +206,12 @@ class WebSearchTool(Tool):
                 success=False,
                 content="",
                 error=f"Failed to parse search results: {str(e)}",
+                tool_call_id=f"search_{uuid.uuid4().hex[:8]}"
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                content="",
+                error=f"Search error: {str(e)}",
                 tool_call_id=f"search_{uuid.uuid4().hex[:8]}"
             )
