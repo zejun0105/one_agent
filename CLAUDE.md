@@ -352,6 +352,17 @@ MCP_CONFIG_FILE=mcp_servers.json  # Path to MCP config
 | `MCPTool` | Wrapper for MCP tools to work with One-Agent |
 | `MCPToolInfo` | Information about an MCP tool |
 
+### Error Handling
+
+API errors are parsed and displayed user-friendly:
+
+```python
+# main.py:parse_api_error() handles:
+# - RateLimitError (429) -> "Rate limit exceeded. Please slow down"
+# - AuthenticationError -> "Authentication failed. Check API key"
+# - BadRequestError (400) -> Shows detailed error message
+```
+
 ### MCP Tool Naming
 
 MCP tools are prefixed with `mcp_` and include the server name:
@@ -434,3 +445,22 @@ VERBOSE=false
 - **Session files**: Named JSON files in history storage directory
 - **Streaming**: Use `Agent.stream()` for streaming responses
 - **Tool creation**: Subclass `Tool` and implement `execute()`
+
+## Known Issues & Fixes
+
+### GLM API Compatibility
+
+GLM API requires different format than OpenAI:
+- Uses `functions` parameter instead of `tools`
+- Requires `type: "function_call"` for tool definitions
+- Requires `type: "tool"` for tool result messages
+
+See `providers/compatible.py:format_tools_for_glm()` for implementation.
+
+### File Encoding
+
+File read tool auto-detects encoding:
+- Tries: UTF-8, GBK, GB2312, GB18030, latin1
+- Useful for Chinese Windows files
+
+See `tools/file_tool.py` for implementation.
