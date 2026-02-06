@@ -116,7 +116,7 @@ CLI (main.py)
 
 | Class | Purpose |
 |-------|---------|
-| `Agent` | Main agent with run(), stream(), history management |
+| `Agent` | Main agent with run(), stream(), history management, MCP lazy loading |
 | `ConversationHistory` | Message storage with persistence, sessions |
 | `SessionMetadata` | Session tracking (name, timestamps, message count) |
 | `Config` | Pydantic configuration with env loading |
@@ -128,6 +128,14 @@ CLI (main.py)
 | `LLMResponse` | Non-streaming response |
 | `Tool` | Abstract base for tools |
 | `ToolResult` | Structured result with success/content/error |
+
+### Agent MCP Methods
+
+| Method | Purpose |
+|--------|---------|
+| `connect_mcp_servers(server_name=None)` | Connect to MCP servers (lazy) |
+| `disconnect_mcp_servers()` | Disconnect from all MCP servers |
+| `list_mcp_servers()` | List configured MCP server names |
 
 ## Tools
 
@@ -247,6 +255,22 @@ PYTHONPATH=. python main.py
 
 One-Agent supports Model Context Protocol (MCP) servers for extended capabilities.
 
+### MCP Lazy Loading (Important)
+
+MCP servers use **lazy loading** to prevent startup hangs:
+- MCP servers are NOT connected when the agent starts
+- Use `/mcp` command in interactive mode to connect
+- Use `Agent.connect_mcp_servers()` programmatically
+
+```python
+# In interactive mode
+You: /mcp  # Connect and list servers
+
+# Programmatically
+agent.connect_mcp_servers()  # Connect all configured servers
+agent.connect_mcp_servers("github")  # Connect specific server
+```
+
 ### MCP Configuration
 
 Create a `mcp_servers.json` file in the project root:
@@ -292,7 +316,7 @@ MCP_CONFIG_FILE=mcp_servers.json  # Path to MCP config
 
 | Command | Description |
 |---------|-------------|
-| `/mcp` | List all MCP servers, connection status, and available tools |
+| `/mcp` | Connect to and list all MCP servers with available tools |
 
 ### Key Classes
 
